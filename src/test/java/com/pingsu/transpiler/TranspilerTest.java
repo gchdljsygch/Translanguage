@@ -8,9 +8,10 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 import static org.junit.jupiter.api.Assertions.*;
 
+@org.junit.jupiter.api.extension.ExtendWith(CompilationEvidence.class)
 class TranspilerTest {
     @TempDir Path temporary;
-    private final Transpiler transpiler = new TypeScriptTranspiler();
+    private final Transpiler transpiler = CompilationEvidence.compiler();
 
     private String compile(String source) {
         TranspileResult result = transpiler.transpile("fixture.ts", source);
@@ -28,6 +29,7 @@ class TranspilerTest {
         boolean finished = process.waitFor(10, TimeUnit.SECONDS);
         if (!finished) process.destroyForcibly();
         assertTrue(finished, "Node.js execution timed out");
+        CompilationEvidence.execution("TranspilerTest Node/Acorn", read(stdout), read(stderr), process.exitValue());
         assertEquals(0, process.exitValue(), () -> read(stderr));
         assertEquals(expected, Files.readString(stdout).strip());
     }
@@ -35,6 +37,7 @@ class TranspilerTest {
         try { return Files.readString(file); } catch (Exception error) { return error.toString(); }
     }
 
+    @org.junit.jupiter.api.DisplayName("TS-001 erasesTypesAndPreservesExpressions")
     @Test void erasesTypesAndPreservesExpressions() throws Exception {
         runs("""
                 // 留下注释 😀
@@ -49,6 +52,7 @@ class TranspilerTest {
                 """, "世界! 5");
     }
 
+    @org.junit.jupiter.api.DisplayName("TS-002 genericArrowsAssertionsAndNonNull")
     @Test void genericArrowsAssertionsAndNonNull() throws Exception {
         runs("""
                 const identity = <T>(value: T): T => value;
@@ -59,6 +63,7 @@ class TranspilerTest {
                 """, "6 true true true");
     }
 
+    @org.junit.jupiter.api.DisplayName("TS-003 classesAndParameterProperties")
     @Test void classesAndParameterProperties() throws Exception {
         runs("""
                 interface Named { name: string; }
@@ -76,6 +81,7 @@ class TranspilerTest {
                 """, "3 7");
     }
 
+    @org.junit.jupiter.api.DisplayName("TS-004 enumsAndConstEnums")
     @Test void enumsAndConstEnums() throws Exception {
         runs("""
                 enum Color { Red, Green = 4, Blue }
@@ -85,6 +91,7 @@ class TranspilerTest {
                 """, "0 5 Blue YES -1");
     }
 
+    @org.junit.jupiter.api.DisplayName("TS-005 overloadsAmbientAndThisParameters")
     @Test void overloadsAmbientAndThisParameters() throws Exception {
         runs("""
                 declare const external: string;
@@ -98,6 +105,7 @@ class TranspilerTest {
                 """, "4 5 undefined");
     }
 
+    @org.junit.jupiter.api.DisplayName("TS-006 explicitTypeOnlyImportsDoNotLoadModules")
     @Test void explicitTypeOnlyImportsDoNotLoadModules() throws Exception {
         runs("""
                 import type { NotInstalled } from "missing-package";
@@ -110,6 +118,7 @@ class TranspilerTest {
                 """, "3");
     }
 
+    @org.junit.jupiter.api.DisplayName("TS-007 mixedImportsAndExportsKeepRuntimeBindings")
     @Test void mixedImportsAndExportsKeepRuntimeBindings() throws Exception {
         runs("""
                 import { type Stats, basename as name } from "node:path";
@@ -118,11 +127,13 @@ class TranspilerTest {
                 """, "b.txt");
     }
 
+    @org.junit.jupiter.api.DisplayName("TS-008 preservesPlainJavaScriptAndTrivia")
     @Test void preservesPlainJavaScriptAndTrivia() {
         String source = "// 😀 中文\r\nconst message = 'as number: T';\r\nconst x = {type: 3, name: 'A'};\r\nconsole.log(/a:b/.test('a:b'), message, x.type);\r\n";
         assertEquals(source, compile(source));
     }
 
+    @org.junit.jupiter.api.DisplayName("TS-009 nestedTemplatesAndControlFlow")
     @Test void nestedTemplatesAndControlFlow() throws Exception {
         runs("""
                 const values: number[] = [1, 2];
@@ -132,10 +143,12 @@ class TranspilerTest {
                 """, "2,4 3");
     }
 
+    @org.junit.jupiter.api.DisplayName("TS-010 lineTerminatorsInsideCommentsPreserveReturnSemantics")
     @Test void lineTerminatorsInsideCommentsPreserveReturnSemantics() throws Exception {
         runs("function f(): number | undefined { return /* newline\n */ 3; }\nconsole.log(f());", "undefined");
     }
 
+    @org.junit.jupiter.api.DisplayName("TS-011 nestedTemplateBlocksKeepBraceState")
     @Test void nestedTemplateBlocksKeepBraceState() throws Exception {
         runs("""
                 const x: number = 3;
@@ -143,6 +156,7 @@ class TranspilerTest {
                 """, "3!");
     }
 
+    @org.junit.jupiter.api.DisplayName("TS-012 derivedParameterPropertiesRunAfterSuper")
     @Test void derivedParameterPropertiesRunAfterSuper() throws Exception {
         runs("""
                 class Base { constructor(public prefix: string) {} }
@@ -157,6 +171,7 @@ class TranspilerTest {
                 """, "v 7");
     }
 
+    @org.junit.jupiter.api.DisplayName("TS-013 typedObjectMethodsAndAnonymousFunctions")
     @Test void typedObjectMethodsAndAnonymousFunctions() throws Exception {
         runs("""
                 const object = { twice(x: number): number { return x * 2; } };
@@ -167,6 +182,7 @@ class TranspilerTest {
                 """, "4 5 a 6");
     }
 
+    @org.junit.jupiter.api.DisplayName("TS-014 comparisonsAndOptionalChainsRemainJavaScript")
     @Test void comparisonsAndOptionalChainsRemainJavaScript() throws Exception {
         runs("""
                 const object: {value: number} | null = {value: 2};
@@ -175,6 +191,7 @@ class TranspilerTest {
                 """, "2 2 true");
     }
 
+    @org.junit.jupiter.api.DisplayName("TS-015 reportsSyntaxAndLexerLocationsWithoutOutput")
     @Test void reportsSyntaxAndLexerLocationsWithoutOutput() {
         for (String source : new String[]{"const broken: = 2;", "const x = §;", "const x = ;"}) {
             TranspileResult result = transpiler.transpile("bad.ts", source);
@@ -186,6 +203,7 @@ class TranspilerTest {
         }
     }
 
+    @org.junit.jupiter.api.DisplayName("TS-016 unsupportedRuntimeFeaturesFailExplicitly")
     @Test void unsupportedRuntimeFeaturesFailExplicitly() {
         for (String source : new String[]{
                 "namespace Runtime { export const x = 1; }",
@@ -200,12 +218,14 @@ class TranspilerTest {
         }
     }
 
+    @org.junit.jupiter.api.DisplayName("TS-017 erasingAmbientNamespaceDoesNotCreateAnExternalModule")
     @Test void erasingAmbientNamespaceDoesNotCreateAnExternalModule() {
         assertFalse(compile("declare namespace Foo { export interface Bar {} }").contains("export"));
         assertTrue(compile("export interface Foo {}").contains("export {}"));
         assertEquals("const x = 1;", compile("\uFEFFconst x: number = 1;"));
     }
 
+    @org.junit.jupiter.api.DisplayName("TS-018 exportsKeepRuntimeDeclarations")
     @Test void exportsKeepRuntimeDeclarations() throws Exception {
         runs("""
                 export enum E { A, B }
@@ -216,6 +236,7 @@ class TranspilerTest {
                 """, "1");
     }
 
+    @org.junit.jupiter.api.DisplayName("TS-019 asyncDestructuringRestAndExceptionTypes")
     @Test void asyncDestructuringRestAndExceptionTypes() throws Exception {
         runs("""
                 async function sum({start}: {start: number}, ...values: number[]): Promise<number> {
@@ -226,6 +247,7 @@ class TranspilerTest {
                 """, "6");
     }
 
+    @org.junit.jupiter.api.DisplayName("TS-020 reusableTranspilerDoesNotLeakState")
     @Test void reusableTranspilerDoesNotLeakState() {
         assertFalse(transpiler.transpile("bad.ts", "const = ;").successful());
         assertEquals("const x = 1;", compile("const x: number = 1;"));

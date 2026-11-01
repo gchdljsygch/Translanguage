@@ -17,7 +17,8 @@ public abstract class AbstractCompilation {
         /** Compilation stopped with diagnostics or an exception. */
         FAILED
     }
-    private State state = State.CREATED;
+    private volatile State state = State.CREATED;
+    private boolean executed;
     protected final String sourceName;
     protected final String source;
 
@@ -44,6 +45,10 @@ public abstract class AbstractCompilation {
      */
     protected final void transition(State expected, State next) {
         if (state != expected) throw new IllegalStateException("Expected " + expected + ", was " + state);
+        boolean legal = expected == State.CREATED && next == State.PARSED
+                || expected == State.PARSED && next == State.TRANSFORMED
+                || expected == State.TRANSFORMED && next == State.COMPLETED;
+        if (!legal) throw new IllegalStateException("Invalid compilation transition: " + expected + " -> " + next);
         state = next;
     }
 
@@ -53,14 +58,15 @@ public abstract class AbstractCompilation {
      * @return the generated JavaScript and diagnostics
      * @throws IllegalStateException when the session was already executed
      */
-    public final TranspileResult execute() {
-        if (state != State.CREATED) throw new IllegalStateException("Compilation sessions are single use");
+    public final synchronized TranspileResult execute() {
+        if (executed) throw new IllegalStateException("Compilation sessions are single use");
+        executed = true;
         try {
             TranspileResult result = compile();
             if (result.successful()) transition(State.TRANSFORMED, State.COMPLETED);
             else state = State.FAILED;
             return result;
-        } catch (RuntimeException error) {
+        } catch (RuntimeException | Error error) {
             state = State.FAILED;
             throw error;
         }

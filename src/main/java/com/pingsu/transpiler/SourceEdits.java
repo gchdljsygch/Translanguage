@@ -1,48 +1,41 @@
 package com.pingsu.transpiler;
 
+import com.pingsu.transpiler.internal.source.SourceText;
+import com.pingsu.transpiler.syntax.SourceRange;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import org.antlr.v4.runtime.Token;
+import java.util.Objects;
 
-/** Applies non-overlapping edits against original ANTLR code-point offsets. */
+/** Non-overlapping edits against original UTF-16 offsets, never against already edited text. */
 final class SourceEdits {
-    private record Edit(int start, int end, String replacement) { }
-    private final String source;
-    private final int[] offsets;
+    private record Edit(SourceRange range, String replacement) { }
+    private final SourceText source;
     private final List<Edit> edits = new ArrayList<>();
-
-    SourceEdits(String source) {
-        this.source = source;
-        offsets = new int[source.codePointCount(0, source.length()) + 1];
-        int charOffset = 0;
-        for (int i = 0; i < offsets.length - 1; i++) {
-            offsets[i] = charOffset;
-            charOffset += Character.charCount(source.codePointAt(charOffset));
+    SourceEdits(String source) { this.source = new SourceText(source); }
+    void replace(SourceRange range, String replacement) {
+        source.checkRange(range); Objects.requireNonNull(replacement);
+        for (Edit edit : edits) {
+            SourceRange existing = edit.range();
+            boolean interiorInsertion = range.length() == 0 && existing.start() < range.start() && range.start() < existing.end()
+                    || existing.length() == 0 && range.start() < existing.start() && existing.start() < range.end();
+            if (range.overlaps(existing) || interiorInsertion)
+                throw new IllegalStateException("Overlapping transformation edits: " + existing + " and " + range);
         }
-        offsets[offsets.length - 1] = source.length();
+        edits.add(new Edit(range, replacement));
     }
-
-    void replace(Token first, Token last, String replacement) {
-        edits.add(new Edit(offsets[first.getStartIndex()], offsets[last.getStopIndex() + 1], replacement));
-    }
-
-    void insertAfter(Token token, String text) {
-        int position = offsets[token.getStopIndex() + 1];
-        edits.add(new Edit(position, position, text));
-    }
-
-    void append(String text) { edits.add(new Edit(source.length(), source.length(), text)); }
-
+    void append(String text) { replace(SourceRange.at(source.length()), text); }
     String render() {
-        edits.sort(Comparator.comparingInt(Edit::start).thenComparingInt(Edit::end));
+        // Stable sort preserves registration order at a shared insertion offset. An insertion at
+        // a replacement's start precedes it; an insertion at its end follows it.
+        var ordered = new ArrayList<>(edits);
+        ordered.sort(Comparator.comparingInt((Edit edit) -> edit.range().start()).thenComparingInt(edit -> edit.range().end()));
         StringBuilder output = new StringBuilder();
         int cursor = 0;
-        for (Edit edit : edits) {
-            if (edit.start < cursor) throw new IllegalStateException("Overlapping transformation edits");
-            output.append(source, cursor, edit.start).append(edit.replacement);
-            cursor = edit.end;
+        for (Edit edit : ordered) {
+            output.append(source.text(), cursor, edit.range().start()).append(edit.replacement());
+            cursor = edit.range().end();
         }
-        return output.append(source, cursor, source.length()).toString();
+        return output.append(source.text(), cursor, source.length()).toString();
     }
 }

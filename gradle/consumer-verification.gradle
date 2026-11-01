@@ -1,0 +1,223 @@
+// Consumer verification deliberately never uses testRuntimeClasspath.
+import groovy.json.JsonOutput
+import groovy.json.JsonSlurper
+import java.util.concurrent.TimeUnit
+import java.util.jar.JarFile
+import javax.xml.parsers.DocumentBuilderFactory
+
+final def mainJar = tasks.named('jar', Jar).flatMap { it.archiveFile }
+final def consumerClasses = layout.buildDirectory.dir('consumer-test/classes')
+final def java17Compiler = javaToolchains.compilerFor { languageVersion = JavaLanguageVersion.of(17) }
+final def java17Launcher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(17) }
+final def newerLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(25) }
+
+tasks.register('compileStandaloneConsumer', JavaCompile) {
+    group = 'verification'
+    description = 'Compile the extension/consumer example using JDK 17 and only the main JAR.'
+    dependsOn tasks.named('jar')
+    source = fileTree('src/consumerTest/java') { include '**/*.java' }
+    classpath = files(mainJar)
+    destinationDirectory = consumerClasses
+    javaCompiler = java17Compiler
+    options.release = 17
+}
+
+['verifyExtensionApi': java17Launcher, 'verifyPreserveConsumer': java17Launcher,
+ 'verifyPreserveConsumerNewerJdk': newerLauncher, 'verifyRegularConsumer': java17Launcher,
+ 'verifyRegularConsumerNewerJdk': newerLauncher, 'verifyStandaloneConsumer': java17Launcher,
+ 'verifyStandaloneConsumerNewerJdk': newerLauncher].each { taskName, launcher ->
+    tasks.register(taskName, JavaExec) {
+        group = 'verification'
+        description = 'Run the consumer with an explicit main-JAR-only classpath and no build/test tools on PATH.'
+        dependsOn tasks.named('compileStandaloneConsumer')
+        classpath = files(consumerClasses, mainJar)
+        mainClass = 'consumer.StandaloneConsumer'
+        javaLauncher = launcher
+        if (taskName == 'verifyExtensionApi') args '--api-only'
+        if (taskName.startsWith('verifyPreserveConsumer')) args '--preserve-only'
+        if (taskName.startsWith('verifyRegularConsumer')) args '--regular-only'
+        def sandboxDirectory = new File(System.getProperty('java.io.tmpdir'),
+                'Translanguage consumer 中文/' + Integer.toHexString(project.projectDir.absolutePath.hashCode()) + '/' + taskName)
+        workingDir sandboxDirectory
+        doFirst {
+            sandboxDirectory.mkdirs()
+            def emptyHome = new File(sandboxDirectory, 'empty-home')
+            emptyHome.mkdirs()
+            systemProperty 'user.home', emptyHome.absolutePath
+            def cleanEnvironment = new HashMap(System.getenv())
+            cleanEnvironment.keySet().removeIf { key -> key.equalsIgnoreCase('PATH') ||
+                    key in ['CLASSPATH', 'JAVA_TOOL_OPTIONS', '_JAVA_OPTIONS', 'JDK_JAVA_OPTIONS',
+                            'GRADLE_HOME', 'GRADLE_USER_HOME', 'MAVEN_HOME', 'M2_HOME', 'NODE_PATH', 'NODE_OPTIONS'] }
+            cleanEnvironment.put('PATH', launcher.get().metadata.installationPath.dir('bin').asFile.absolutePath)
+            setEnvironment(cleanEnvironment)
+        }
+    }
+}
+
+// Extension compilation and execution are part of the consumer contract.
+tasks.named('check') { dependsOn tasks.named('verifyExtensionApi') }
+// All final P7 gates below are mandatory, including each individual Maven publish task.
+
+tasks.register('recordDependencyBaseline') {
+    group = 'verification'
+    description = 'Record resolved production, test and generator graphs separately.'
+    doLast {
+        def graphs = [:]
+        ['compileClasspath', 'runtimeClasspath', 'testRuntimeClasspath', 'referenceCompileClasspath', 'referenceRuntimeClasspath', 'antlr'].each { name ->
+            def configuration = configurations.findByName(name)
+            if (configuration != null) graphs[name] = [
+                artifacts: configuration.resolvedConfiguration.resolvedArtifacts.collect {
+                    [coordinate: it.moduleVersion.id.toString(), file: it.file.name]
+                }.sort { it.coordinate },
+                edges: configuration.incoming.resolutionResult.allDependencies.collect { it.toString() }.sort()
+            ]
+        }
+        def destination = layout.buildDirectory.file('reports/consumer/dependency-graphs.json').get().asFile
+        destination.parentFile.mkdirs()
+        destination.setText(JsonOutput.prettyPrint(JsonOutput.toJson(graphs)) + '\n', 'UTF-8')
+    }
+}
+
+tasks.register('auditConsumerDependencies') {
+    group = 'verification'
+    description = 'Strict final acceptance: no third-party dependencies, implementation resources or publication leakage.'
+    dependsOn tasks.named('jar'), tasks.named('sourcesJar'), tasks.named('javadocJar'),
+            tasks.named('generatePomFileForLibraryPublication'), tasks.named('generateMetadataFileForLibraryPublication'),
+            tasks.named('recordDependencyBaseline')
+    doLast {
+        def failures = []
+        def documentationScripts = []
+        // Exact standard-doclet paths only. Compiler/runtime JS remains forbidden in every artifact.
+        def docletScripts = ['script.js', 'search.js', 'member-search-index.js', 'module-search-index.js',
+                'package-search-index.js', 'tag-search-index.js', 'type-search-index.js',
+                'script-dir/jquery-3.7.1.min.js', 'script-dir/jquery-ui.min.js'] as Set
+        def reportDir = layout.buildDirectory.dir('reports/consumer').get().asFile
+        reportDir.mkdirs()
+        ['compileClasspath', 'runtimeClasspath'].each { name ->
+            def deps = configurations.getByName(name).resolvedConfiguration.resolvedArtifacts
+            if (!deps.empty) failures << (name + ': ' + deps.collect { it.moduleVersion.id.toString() }.sort().join(', '))
+        }
+        ['jar', 'sourcesJar', 'javadocJar'].each { taskName ->
+            def artifact = tasks.named(taskName, Jar).get().archiveFile.get().asFile
+            new JarFile(artifact).withCloseable { jar ->
+                def entries = jar.entries().toList()*.name
+                entries.findAll { entry -> entry.startsWith('com/pingsu/antlr/') || entry.startsWith('org/antlr/') ||
+                        entry.startsWith('com/google/') || entry.endsWith('.jar') || entry.endsWith('.g4') ||
+                        entry.endsWith('.mjs') || entry.endsWith('.cjs') || entry.endsWith('.dll') || entry.endsWith('.so') ||
+                        entry.endsWith('.exe') || entry.endsWith('.node') || entry.endsWith('.zip') ||
+                        entry.endsWith('.js') && !(taskName == 'javadocJar' && docletScripts.contains(entry)) ||
+                        entry.contains('/consumer/') || entry.contains('/reference/') ||
+                        (entry.endsWith('.class') || entry.endsWith('.java')) && !entry.startsWith('com/pingsu/transpiler/') ||
+                        entry.contains('ClosureJavaScriptEmitter') || entry.contains('ClassFieldSemantics')
+                }.each { failures << (artifact.name + ': forbidden entry ' + it) }
+                if (taskName == 'javadocJar') entries.findAll { docletScripts.contains(it) }.each { entry ->
+                    def generated = new File(tasks.named('javadoc').get().destinationDir, entry)
+                    def bytes = jar.getInputStream(jar.getJarEntry(entry)).withCloseable { it.readAllBytes() }
+                    if (!generated.isFile() || !Arrays.equals(bytes, generated.bytes))
+                        failures << (artifact.name + ': script differs from JDK doclet output: ' + entry)
+                    documentationScripts << [entry: entry, origin: 'JDK 17 standard doclet',
+                            sha256: java.security.MessageDigest.getInstance('SHA-256').digest(bytes).encodeHex().toString()]
+                }
+                def attributes = jar.manifest?.mainAttributes
+                if (attributes?.getValue('Main-Class') || attributes?.getValue('Class-Path')) failures << (artifact.name + ': executable/dependency manifest')
+                if (attributes?.getValue('Automatic-Module-Name') != 'com.pingsu.transpiler') failures << (artifact.name + ': wrong module name')
+                def digest = java.security.MessageDigest.getInstance('SHA-256').digest(artifact.bytes).encodeHex().toString()
+                new File(reportDir, artifact.name + '.sha256').setText(digest + '\n', 'UTF-8')
+            }
+        }
+        def factory = DocumentBuilderFactory.newInstance()
+        factory.setFeature('http://apache.org/xml/features/disallow-doctype-decl', true)
+        def pom = factory.newDocumentBuilder().parse(layout.buildDirectory.file('publications/library/pom-default.xml').get().asFile)
+        ['dependency', 'parent'].each { tag ->
+            if (pom.getElementsByTagName(tag).length > 0) failures << ('POM contains ' + tag)
+        }
+        def metadata = new JsonSlurper().parse(layout.buildDirectory.file('publications/library/module.json').get().asFile)
+        metadata.variants.each { variant ->
+            if (variant.dependencies || variant.dependencyConstraints || variant.'available-at') failures << ('Module metadata leaks dependencies: ' + variant.name)
+        }
+        def jdk = java17Launcher.get().metadata.installationPath.asFile
+        def suffix = System.getProperty('os.name').toLowerCase().contains('windows') ? '.exe' : ''
+        ['jdeps.txt': [], 'jdeps-api.txt': ['--api-only']].each { fileName, mode ->
+            def output = new File(reportDir, fileName)
+            def command = [new File(jdk, 'bin/jdeps' + suffix).absolutePath,
+                    '-J-Dfile.encoding=UTF-8', '-J-Duser.language=en', '-J-Duser.country=US',
+                    '--multi-release', '17', '--recursive', '-s'] + mode + [mainJar.get().asFile.absolutePath]
+            def process = new ProcessBuilder(command).redirectErrorStream(true).redirectOutput(output).start()
+            if (!process.waitFor(60, TimeUnit.SECONDS)) { process.destroyForcibly(); throw new GradleException('jdeps timed out') }
+            def dependencyText = output.getText('UTF-8')
+            def edges = dependencyText.readLines().findAll { it.contains(' -> ') }
+            if (process.exitValue() != 0 || dependencyText.contains('not found') || edges.empty ||
+                    edges.any { !it.endsWith(' -> java.base') })
+                failures << ('jdeps found dependencies outside java.base (see ' + fileName + ')')
+        }
+        fileTree('src/main/java') { include '**/*.java' }.each { source ->
+            if (source.getText('UTF-8') =~ /Class\.forName|ServiceLoader|ProcessBuilder|Runtime\.getRuntime|System\.load|java\.net\.|javax\.net\.|com\.google\.|org\.antlr\./)
+                failures << ('Production loading/process/network path requires removal: ' + project.relativePath(source))
+        }
+        new File(reportDir, 'audit.json').setText(JsonOutput.prettyPrint(JsonOutput.toJson(
+                [ready: failures.empty, failures: failures, documentationScripts: documentationScripts])) + '\n', 'UTF-8')
+        if (!failures.empty) throw new GradleException('Consumer is not dependency-free: ' + failures.size() + ' findings; see build/reports/consumer/audit.json')
+    }
+}
+
+// Public signatures must independently remain inside java.base.
+tasks.register('auditExtensionApi') {
+    group = 'verification'
+    description = 'Check every public/protected library API signature with JDK 17 jdeps.'
+    dependsOn tasks.named('jar')
+    doLast {
+        def jdk = java17Launcher.get().metadata.installationPath.asFile
+        def suffix = System.getProperty('os.name').toLowerCase().contains('windows') ? '.exe' : ''
+        def output = layout.buildDirectory.file('reports/consumer/jdeps-extension-api.txt').get().asFile
+        output.parentFile.mkdirs()
+        def process = new ProcessBuilder(new File(jdk, 'bin/jdeps' + suffix).absolutePath,
+                '-J-Dfile.encoding=UTF-8', '-J-Duser.language=en', '--api-only', '-include',
+                'com\\.pingsu\\.transpiler\\..*', '-s', mainJar.get().asFile.absolutePath)
+                .redirectErrorStream(true).redirectOutput(output).start()
+        if (!process.waitFor(60, TimeUnit.SECONDS)) { process.destroyForcibly(); throw new GradleException('API jdeps timed out') }
+        def text = output.getText('UTF-8')
+        def edges = text.readLines().findAll { it.contains(' -> ') }
+        if (process.exitValue() != 0 || edges.empty || text.contains('not found') || edges.any { !it.endsWith(' -> java.base') })
+            throw new GradleException('Public extension API leaks dependencies; see ' + output)
+    }
+}
+tasks.named('check') { dependsOn tasks.named('auditExtensionApi') }
+
+// P2/P3 gate: production parsing and PRESERVE need no third-party runtime.
+tasks.register('auditFrontendIsolation') {
+    group = 'verification'
+    dependsOn tasks.named('jar'), tasks.named('sourcesJar')
+    doLast {
+        ['compileClasspath', 'runtimeClasspath'].each { name ->
+            if (configurations.getByName(name).resolvedConfiguration.resolvedArtifacts.any { it.moduleVersion.id.group.startsWith('org.antlr') })
+                throw new GradleException(name + ' still contains ANTLR')
+        }
+        ['jar', 'sourcesJar'].each { name ->
+            new JarFile(tasks.named(name, Jar).get().archiveFile.get().asFile).withCloseable { jar ->
+                if (jar.entries().toList().any { it.name.contains('/antlr/') || it.name.endsWith('.g4') || it.name.contains('LegacySyntaxAdapter') })
+                    throw new GradleException(name + ' still contains the old frontend')
+            }
+        }
+        fileTree('src/main/java').each { source ->
+            if (source.getText('UTF-8').contains('org.antlr') || source.getText('UTF-8').contains('com.pingsu.antlr'))
+                throw new GradleException('Production source refers to ANTLR: ' + source)
+        }
+    }
+}
+tasks.named('check') {
+    dependsOn tasks.named('auditFrontendIsolation'), tasks.named('verifyPreserveConsumer'), tasks.named('verifyPreserveConsumerNewerJdk')
+}
+
+// P4/P5 gates: ES2021 (including native async) and ordinary ES6 need only the main JAR.
+tasks.named('check') { dependsOn tasks.named('verifyRegularConsumer'), tasks.named('verifyRegularConsumerNewerJdk') }
+
+// P7 is fail-closed for check, aggregate publishing, and direct repository/local publication tasks.
+tasks.named('check') {
+    dependsOn tasks.named('auditConsumerDependencies'), tasks.named('verifyStandaloneConsumer'),
+            tasks.named('verifyStandaloneConsumerNewerJdk')
+}
+tasks.withType(org.gradle.api.publish.maven.tasks.AbstractPublishToMaven).configureEach {
+    dependsOn tasks.named('check')
+}
+tasks.named('publish') { dependsOn tasks.named('check') }
+tasks.named('publishToMavenLocal') { dependsOn tasks.named('check') }

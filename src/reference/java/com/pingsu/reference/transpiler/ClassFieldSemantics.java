@@ -1,4 +1,4 @@
-package com.pingsu.transpiler;
+package com.pingsu.reference.transpiler;
 
 import com.google.javascript.jscomp.Compiler;
 import com.google.javascript.jscomp.DiagnosticType;

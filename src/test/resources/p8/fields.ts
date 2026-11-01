@@ -1,0 +1,1 @@
+let n=0;const k={toString(){n++;return "x"}};class A{set x(v){throw 0}} class B extends A{[k]=2;static v=3}const b=new B();console.log(n,b.x,Object.keys(b).join(","),Object.getOwnPropertyDescriptor(b,"x").writable,B.v);

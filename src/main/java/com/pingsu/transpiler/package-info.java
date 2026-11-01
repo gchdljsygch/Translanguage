@@ -30,6 +30,8 @@
  * {@link com.pingsu.transpiler.TransformationPass}，并通过
  * {@link com.pingsu.transpiler.TypeScriptTranspiler#TypeScriptTranspiler(java.util.List)}
  * 注入自定义阶段。解析树与 token 通过 {@link com.pingsu.transpiler.TransformationContext}
- * 暴露，因此 ANTLR 运行时是 {@code api} 依赖。</p>
+ * 暴露，公共扩展接口使用本项目的不可变语法视图与 UTF-16 半开区间。
+ * 生产前端和后端均使用自有 Java 实现，全部目标（含 ES6 异步）仅需 JDK 17+ 与主 JAR，
+ * 生产编译/运行类路径及发布元数据无第三方依赖。发行验收覆盖独立断网环境。</p>
  */
 package com.pingsu.transpiler;

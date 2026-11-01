@@ -1,0 +1,1 @@
+import D,{type T,value as v} from "business";import * as ns from "namespace";import "side-effect";export {v as value};export {v as renamed} from "business";export * from "other";export * as space from "other";

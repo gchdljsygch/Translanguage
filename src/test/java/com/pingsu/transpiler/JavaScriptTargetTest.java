@@ -12,11 +12,12 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import static org.junit.jupiter.api.Assertions.*;
 
+@org.junit.jupiter.api.extension.ExtendWith(CompilationEvidence.class)
 class JavaScriptTargetTest {
     @TempDir Path temporary;
 
     private String compile(JavaScriptTarget target, String source) throws Exception {
-        TranspileResult result = new TypeScriptTranspiler(target).transpile("fixture.ts", source);
+        TranspileResult result = CompilationEvidence.compiler(target).transpile("fixture.ts", source);
         assertTrue(result.successful(), () -> result.diagnostics().toString());
         checkSyntax(target, result.javaScript());
         return result.javaScript();
@@ -48,6 +49,7 @@ class JavaScriptTargetTest {
         boolean finished = process.waitFor(15, TimeUnit.SECONDS);
         if (!finished) process.destroyForcibly();
         assertTrue(finished, "Node execution timed out");
+        CompilationEvidence.execution("JavaScriptTargetTest Node/Acorn", read(stdout), read(stderr), process.exitValue());
         assertEquals(0, process.exitValue(), () -> read(stderr));
         return Files.readString(stdout, StandardCharsets.UTF_8).strip();
     }
@@ -65,7 +67,8 @@ class JavaScriptTargetTest {
         return output;
     }
 
-    @ParameterizedTest @EnumSource(value = JavaScriptTarget.class, names = {"ES6", "ES2021"})
+    @org.junit.jupiter.api.DisplayName("JT-001 modernExpressionsPreserveEvaluationOrderAndMethodReceiver")
+    @ParameterizedTest(name = "JT-001/{0}") @EnumSource(value = JavaScriptTarget.class, names = {"ES6", "ES2021"})
     void modernExpressionsPreserveEvaluationOrderAndMethodReceiver(JavaScriptTarget target) throws Exception {
         runs(target, """
                 let calls: number = 0;
@@ -83,7 +86,8 @@ class JavaScriptTargetTest {
                 """, "5 undefined 7\n1 0 2 8 9 1000 false");
     }
 
-    @ParameterizedTest @EnumSource(value = JavaScriptTarget.class, names = {"ES6", "ES2021"})
+    @org.junit.jupiter.api.DisplayName("JT-002 asyncFunctionsCarryTheirOwnHelpers")
+    @ParameterizedTest(name = "JT-002/{0}") @EnumSource(value = JavaScriptTarget.class, names = {"ES6", "ES2021"})
     void asyncFunctionsCarryTheirOwnHelpers(JavaScriptTarget target) throws Exception {
         String output = runs(target, """
                 const owner = {
@@ -100,7 +104,8 @@ class JavaScriptTargetTest {
         else assertTrue(output.contains("async"));
     }
 
-    @ParameterizedTest @EnumSource(value = JavaScriptTarget.class, names = {"ES6", "ES2021"})
+    @org.junit.jupiter.api.DisplayName("JT-003 classFieldsDefineOwnPropertiesAndPreserveInitializationOrder")
+    @ParameterizedTest(name = "JT-003/{0}") @EnumSource(value = JavaScriptTarget.class, names = {"ES6", "ES2021"})
     void classFieldsDefineOwnPropertiesAndPreserveInitializationOrder(JavaScriptTarget target) throws Exception {
         runs(target, """
                 const events: string[] = [];
@@ -123,7 +128,8 @@ class JavaScriptTargetTest {
                 """, "3 4 9 value,unset,copy,id\nItem true\ntrue true true undefined\nbase,3:9");
     }
 
-    @ParameterizedTest @EnumSource(value = JavaScriptTarget.class, names = {"ES6", "ES2021"})
+    @org.junit.jupiter.api.DisplayName("JT-004 computedAndExpressionClassesKeepKeysAndLexicalValues")
+    @ParameterizedTest(name = "JT-004/{0}") @EnumSource(value = JavaScriptTarget.class, names = {"ES6", "ES2021"})
     void computedAndExpressionClassesKeepKeysAndLexicalValues(JavaScriptTarget target) throws Exception {
         runs(target, """
                 let count = 0;
@@ -140,7 +146,8 @@ class JavaScriptTargetTest {
                 """, "1 7 8 Local");
     }
 
-    @ParameterizedTest @EnumSource(value = JavaScriptTarget.class, names = {"ES6", "ES2021"})
+    @org.junit.jupiter.api.DisplayName("JT-005 preservesModulesAndDoesNotResolveDependencies")
+    @ParameterizedTest(name = "JT-005/{0}") @EnumSource(value = JavaScriptTarget.class, names = {"ES6", "ES2021"})
     void preservesModulesAndDoesNotResolveDependencies(JavaScriptTarget target) throws Exception {
         String output = compile(target, """
                 import value from 'uninstalled-package';
@@ -161,7 +168,8 @@ class JavaScriptTargetTest {
         assertTrue(compile(target, "export interface Empty {}").contains("export"));
     }
 
-    @ParameterizedTest @EnumSource(value = JavaScriptTarget.class, names = {"ES6", "ES2021"})
+    @org.junit.jupiter.api.DisplayName("JT-006 spreadRestAndOptionalCatchBindings")
+    @ParameterizedTest(name = "JT-006/{0}") @EnumSource(value = JavaScriptTarget.class, names = {"ES6", "ES2021"})
     void spreadRestAndOptionalCatchBindings(JavaScriptTarget target) throws Exception {
         runs(target, """
                 const original = {a: 1, b: 2};
@@ -172,7 +180,8 @@ class JavaScriptTargetTest {
                 """, "1 2 3 5");
     }
 
-    @ParameterizedTest @EnumSource(value = JavaScriptTarget.class, names = {"ES6", "ES2021"})
+    @org.junit.jupiter.api.DisplayName("JT-007 accessorsStaticSuperAndConstructorShadowingKeepSemantics")
+    @ParameterizedTest(name = "JT-007/{0}") @EnumSource(value = JavaScriptTarget.class, names = {"ES6", "ES2021"})
     void accessorsStaticSuperAndConstructorShadowingKeepSemantics(JavaScriptTarget target) throws Exception {
         runs(target, """
                 const outer = 6;
@@ -192,7 +201,8 @@ class JavaScriptTargetTest {
                 """, "9 6\nDerived 0 value");
     }
 
-    @ParameterizedTest @EnumSource(value = JavaScriptTarget.class, names = {"ES6", "ES2021"})
+    @org.junit.jupiter.api.DisplayName("JT-008 asyncIterationKeepsCleanupAndResults")
+    @ParameterizedTest(name = "JT-008/{0}") @EnumSource(value = JavaScriptTarget.class, names = {"ES6", "ES2021"})
     void asyncIterationKeepsCleanupAndResults(JavaScriptTarget target) throws Exception {
         runs(target, """
                 async function* values() { try { yield 2; yield 3; } finally { console.log('closed'); } }
@@ -205,7 +215,8 @@ class JavaScriptTargetTest {
                 """, "closed\n5");
     }
 
-    @ParameterizedTest @EnumSource(value = JavaScriptTarget.class, names = {"ES6", "ES2021"})
+    @org.junit.jupiter.api.DisplayName("JT-009 defaultExportAndAnonymousClassNamesRemainStable")
+    @ParameterizedTest(name = "JT-009/{0}") @EnumSource(value = JavaScriptTarget.class, names = {"ES6", "ES2021"})
     void defaultExportAndAnonymousClassNamesRemainStable(JavaScriptTarget target) throws Exception {
         runs(target, """
                 export default class Thing { static label = this.name; }
@@ -215,6 +226,7 @@ class JavaScriptTargetTest {
                 """, "Thing Anonymous true 2");
     }
 
+    @org.junit.jupiter.api.DisplayName("JT-010 es2021RetainsSupportedSyntax")
     @Test void es2021RetainsSupportedSyntax() throws Exception {
         String output = runs(JavaScriptTarget.ES2021, """
                 let count: bigint = 1_000n;
@@ -227,21 +239,23 @@ class JavaScriptTargetTest {
         compile(JavaScriptTarget.ES2021, "const load = () => import('./external.mjs'); console.log(import.meta.url);");
     }
 
+    @org.junit.jupiter.api.DisplayName("JT-011 incompatibleSyntaxFailsInsteadOfLeakingIntoAnOlderTarget")
     @Test void incompatibleSyntaxFailsInsteadOfLeakingIntoAnOlderTarget() {
         for (String source : List.of("const value = 1n;", "const load = () => import('./x.mjs');",
                 "console.log(import.meta.url);", "console.log(/(?<=a)b/.test('ab'));", "console.log(/x/s.test('x'));")) {
-            TranspileResult result = new TypeScriptTranspiler(JavaScriptTarget.ES6).transpile("unsupported.ts", source);
+            TranspileResult result = CompilationEvidence.compiler(JavaScriptTarget.ES6).transpile("unsupported.ts", source);
             assertFalse(result.successful(), source + "\n" + result.javaScript());
             assertEquals("", result.javaScript());
             assertTrue(result.diagnostics().stream().allMatch(d -> d.code().equals("JS_TARGET")), result.diagnostics().toString());
         }
     }
 
-    @ParameterizedTest @EnumSource(value = JavaScriptTarget.class, names = {"ES6", "ES2021"})
+    @org.junit.jupiter.api.DisplayName("JT-012 topLevelAwaitAndUnsafeDerivedInitializationFailExplicitly")
+    @ParameterizedTest(name = "JT-012/{0}") @EnumSource(value = JavaScriptTarget.class, names = {"ES6", "ES2021"})
     void topLevelAwaitAndUnsafeDerivedInitializationFailExplicitly(JavaScriptTarget target) {
         for (String source : List.of("console.log(await Promise.resolve(1));",
                 "class B {} class C extends B { value = 1; constructor(flag) { if (flag) super(); else super(); } }")) {
-            TranspileResult result = new TypeScriptTranspiler(target).transpile("bad.ts", source);
+            TranspileResult result = CompilationEvidence.compiler(target).transpile("bad.ts", source);
             assertFalse(result.successful());
             assertEquals("", result.javaScript());
             assertEquals("bad.ts", result.diagnostics().get(0).sourceName());
@@ -249,11 +263,12 @@ class JavaScriptTargetTest {
         }
     }
 
+    @org.junit.jupiter.api.DisplayName("JT-013 defaultsAndExtensionsRemainUsable")
     @Test void defaultsAndExtensionsRemainUsable() throws Exception {
         String original = "// 中文 😀\r\nconst value = object?.field ?? 3;\r\n";
-        assertEquals(original, new TypeScriptTranspiler().transpile("a.ts", original).javaScript());
+        assertEquals(original, CompilationEvidence.compiler().transpile("a.ts", original).javaScript());
         assertEquals(JavaScriptTarget.PRESERVE, new TypeScriptTranspiler().target());
-        Transpiler customized = new TypeScriptTranspiler(JavaScriptTarget.ES6,
+        Transpiler customized = CompilationEvidence.compiler(JavaScriptTarget.ES6,
                 List.of(new TypeErasurePass(), context -> {
                     assertEquals(JavaScriptTarget.ES6, context.target());
                     context.append("\nconst square = 2 ** 3;");
@@ -262,14 +277,15 @@ class JavaScriptTargetTest {
         assertTrue(result.successful(), result.diagnostics().toString());
         checkSyntax(JavaScriptTarget.ES6, result.javaScript());
         assertTrue(result.javaScript().contains("Math.pow"));
-        Transpiler customEmitter = new TypeScriptTranspiler(JavaScriptTarget.ES2021, List.of(new TypeErasurePass()),
+        Transpiler customEmitter = CompilationEvidence.compiler(JavaScriptTarget.ES2021, List.of(new TypeErasurePass()),
                 (name, js, target) -> new TranspileResult("// " + target + "\n" + js, List.of()));
         assertEquals("// ES2021\nconst x = 1;", customEmitter.transpile("a.ts", "const x: number = 1;").javaScript());
         assertThrows(NullPointerException.class, () -> new TypeScriptTranspiler((JavaScriptTarget) null));
     }
 
+    @org.junit.jupiter.api.DisplayName("JT-014 repeatedAndConcurrentCompilationsDoNotShareState")
     @Test void repeatedAndConcurrentCompilationsDoNotShareState() throws Exception {
-        var transpiler = new TypeScriptTranspiler(JavaScriptTarget.ES6);
+        var transpiler = CompilationEvidence.compiler(JavaScriptTarget.ES6);
         assertFalse(transpiler.transpile("bad.ts", "const x = 1n;").successful());
         String source = "export const x: number = ({value: 2})?.value ?? 3;";
         String expected = transpiler.transpile("same.ts", source).javaScript();

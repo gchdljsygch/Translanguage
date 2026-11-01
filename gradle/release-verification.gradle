@@ -1,0 +1,118 @@
+import groovy.json.JsonOutput
+import java.util.concurrent.TimeUnit
+
+// Release fixtures and benchmarks remain outside every published source set.
+def releaseClasses = layout.buildDirectory.dir('release-test/classes')
+tasks.register('compileReleaseAcceptance', JavaCompile) {
+    dependsOn tasks.named('jar')
+    source = fileTree('src/releaseTest/java') { include '**/*.java' }
+    classpath = files(tasks.named('jar', Jar).flatMap { it.archiveFile })
+    destinationDirectory = releaseClasses
+    javaCompiler = javaToolchains.compilerFor { languageVersion = JavaLanguageVersion.of(17) }
+    options.release = 17
+}
+[17,25].each { version ->
+    tasks.register("verifyPerformanceJdk${version}", JavaExec) {
+        group = 'verification'
+        dependsOn tasks.named('compileReleaseAcceptance')
+        javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(version) }
+        classpath = files(releaseClasses, tasks.named('jar', Jar).flatMap { it.archiveFile })
+        mainClass = 'release.PerformanceAcceptance'
+        maxHeapSize = '256m'
+        args layout.buildDirectory.file("reports/release/performance-jdk${version}.tsv").get().asFile.absolutePath
+    }
+}
+
+// Resolve both metadata formats independently from the actual Maven publication, with fresh homes.
+// This follows local publication so it cannot be a dependency of check (publish already needs check).
+tasks.register('verifyPublishedConsumers') {
+    group = 'verification'
+    dependsOn tasks.named('publishLibraryPublicationToBuildRepoRepository')
+    doLast {
+        def reports = layout.buildDirectory.dir('reports/release').get().asFile
+        reports.mkdirs()
+        def records = []
+        [17,25].each { jdkVersion ->
+            def jdk = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(jdkVersion) }.get().metadata.installationPath.asFile
+            ['pom','module'].each { mode ->
+                def root = java.nio.file.Files.createTempDirectory('Translanguage 发布消费 中文 ').toFile()
+                new File(root,'settings.gradle').setText("rootProject.name='published-consumer'\n",'UTF-8')
+                def repo = layout.buildDirectory.dir('repo').get().asFile.toURI().toString()
+                new File(root,'build.gradle').setText("""
+plugins { id 'java' }
+repositories { maven { url = uri('${repo}'); metadataSources { ${mode=='pom'?'mavenPom(); ignoreGradleMetadataRedirection()':'gradleMetadata()'} } } }
+dependencies { implementation '${project.group}:${project.name}:${project.version}' }
+tasks.withType(JavaCompile).configureEach { options.encoding='UTF-8'; options.release=17 }
+tasks.register('verify', JavaExec) {
+    dependsOn classes
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'consumer.StandaloneConsumer'
+    doFirst {
+        ['compileClasspath','runtimeClasspath'].each { name ->
+            def artifacts=configurations.getByName(name).resolvedConfiguration.resolvedArtifacts
+            assert artifacts.size()==1 : artifacts
+            assert artifacts.first().moduleVersion.id.toString()=='${project.group}:${project.name}:${project.version}'
+            def bytes=artifacts.first().file.bytes
+            assert java.security.MessageDigest.getInstance('SHA-256').digest(bytes).encodeHex().toString()=='${java.security.MessageDigest.getInstance('SHA-256').digest(tasks.named('jar',Jar).get().archiveFile.get().asFile.bytes).encodeHex()}'
+        }
+    }
+}
+""",'UTF-8')
+                def destination=new File(root,'src/main/java/consumer');destination.mkdirs()
+                new File(destination,'StandaloneConsumer.java').bytes=file('src/consumerTest/java/consumer/StandaloneConsumer.java').bytes
+                def windows=System.getProperty('os.name').toLowerCase().contains('windows')
+                def executable=new File(gradle.gradleHomeDir,windows?'bin/gradle.bat':'bin/gradle').absolutePath
+                def command=(windows ? ['cmd.exe','/d','/c',executable] : [executable])+['--offline','--no-daemon','--console=plain','--max-workers=1','-g',new File(root,'empty-gradle-home').absolutePath,'verify']
+                def log=new File(reports,"published-${mode}-jdk${jdkVersion}.log")
+                def processBuilder=new ProcessBuilder(command).directory(root).redirectErrorStream(true).redirectOutput(log)
+                processBuilder.environment().put('JAVA_HOME',jdk.absolutePath)
+                ['CLASSPATH','JAVA_TOOL_OPTIONS','_JAVA_OPTIONS','JDK_JAVA_OPTIONS','GRADLE_OPTS'].each { processBuilder.environment().remove(it) }
+                def process=processBuilder.start()
+                if(!process.waitFor(180,TimeUnit.SECONDS)){process.destroyForcibly();throw new GradleException('Published consumer timeout: '+log)}
+                if(process.exitValue()!=0)throw new GradleException('Published consumer failed: '+log)
+                records << [metadata:mode,jdk:jdkVersion,coordinate:"${project.group}:${project.name}:${project.version}",directory:root.absolutePath,offline:true,freshGradleHome:true,artifactCount:1]
+            }
+        }
+        new File(reports,'published-consumers.json').setText(JsonOutput.prettyPrint(JsonOutput.toJson(records))+'\n','UTF-8')
+    }
+}
+tasks.register('verifyRelease') {
+    group='verification'
+    description='Build, publish, resolve both metadata formats and enforce measured performance budgets.'
+    dependsOn tasks.named('build'),tasks.named('verifyPublishedConsumers'),tasks.named('verifyPerformanceJdk17'),tasks.named('verifyPerformanceJdk25')
+}
+
+
+// The OS acceptance cannot be replaced by a cleaned PATH. A missing/stale guest log fails the release gate.
+tasks.register('verifyOfflineArtifacts', JavaExec) {
+    group='verification'
+    dependsOn tasks.named('compileReleaseAcceptance')
+    javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(17) }
+    classpath = files(releaseClasses)
+    mainClass = 'release.OfflineArtifactOracle'
+    doFirst {
+        def log=providers.gradleProperty('offlineGuestLog')
+        def manifest=providers.gradleProperty('offlineGuestManifest')
+        if(!log.present || !manifest.present)throw new GradleException('Provide -PofflineGuestLog=<successful no-NIC guest log> and -PofflineGuestManifest=<guest-manifest.json>; see docs/RELEASE_ACCEPTANCE.md')
+        def inventory=new groovy.json.JsonSlurper().parse(file(manifest.get()))
+        def currentJar=tasks.named('jar',Jar).get().archiveFile.get().asFile
+        def digest=java.security.MessageDigest.getInstance('SHA-256').digest(currentJar.bytes).encodeHex().toString()
+        if(inventory.inputs[currentJar.name]!=digest)throw new GradleException('Offline image used a different release JAR')
+        fileTree('src/consumerTest/java').matching { include '**/*.java' }.each { source ->
+            if(inventory.inputs[source.name]!=java.security.MessageDigest.getInstance('SHA-256').digest(source.bytes).encodeHex().toString())
+                throw new GradleException('Offline image used a different consumer: '+source.name)
+        }
+        def directory=layout.buildDirectory.dir('reports/release/offline-artifacts').get().asFile;directory.mkdirs()
+        def acorn=configurations.testRuntimeClasspath.resolvedConfiguration.resolvedArtifacts.find { it.moduleVersion.id.name=='acorn' }.file
+        new java.util.jar.JarFile(acorn).withCloseable { archive ->
+            new File(directory,'acorn.mjs').bytes=archive.getInputStream(archive.getJarEntry('META-INF/resources/webjars/acorn/8.15.0/dist/acorn.mjs')).readAllBytes()
+        }
+        args file(log.get()).absolutePath,currentJar.absolutePath,directory.absolutePath
+    }
+}
+tasks.named('verifyRelease') {
+    dependsOn tasks.named('verifyOfflineArtifacts')
+    doLast {
+        if(tasks.named('jar',Jar).get().archiveFile.get().asFile.length()>2*1024*1024)throw new GradleException('Main JAR exceeds the 2 MiB release budget')
+    }
+}

@@ -7,16 +7,22 @@ plugins {
 // Translanguage is a library-only project: other programs embed it as a dependency.
 // It deliberately has no application plugin, main class, run task, or distribution.
 group = 'com.pingsu'
-version = '1.0.1'
+version = '2.0.0'
 description = 'TypeScript to JavaScript transpiler library (library only; no CLI or standalone tool).'
 
 repositories { mavenCentral() }
 
+sourceSets {
+    // The reference backend has independent packages and cannot shadow production classes.
+    reference { }
+}
+configurations.testImplementation.extendsFrom(configurations.referenceImplementation)
+
 dependencies {
+    referenceImplementation 'org.antlr:antlr4-runtime:4.13.2'
+    referenceImplementation 'com.google.javascript:closure-compiler:v20240317'
+    testImplementation sourceSets.reference.output
     antlr 'org.antlr:antlr4:4.13.2'
-    api 'org.antlr:antlr4-runtime:4.13.2'
-    // Pinned to the Java 17-compatible release; used only for explicit output targets.
-    implementation 'com.google.javascript:closure-compiler:v20240317'
     testImplementation platform('org.junit:junit-bom:6.0.0')
     testImplementation 'org.junit.jupiter:junit-jupiter'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
@@ -25,7 +31,7 @@ dependencies {
 }
 
 // Gradle's ANTLR plugin adds the generator to api by default.
-// Consumers only need antlr4-runtime; the generator stays a build-only dependency.
+// The generator and its runtime are confined to the reference source set.
 configurations.api {
     setExtendsFrom(extendsFrom.findAll { it.name != 'antlr' })
 }
@@ -38,31 +44,28 @@ java {
 }
 
 tasks.withType(JavaCompile).configureEach {
+    // Identical release bytecode under both build JVMs; tests still run on the selected build JDK.
+    javaCompiler = javaToolchains.compilerFor { languageVersion = JavaLanguageVersion.of(17) }
     options.encoding = 'UTF-8'
     options.release = 17
 }
 
 tasks.withType(Javadoc).configureEach {
+    javadocTool = javaToolchains.javadocToolFor { languageVersion = JavaLanguageVersion.of(17) }
     options.encoding = 'UTF-8'
     options.addBooleanOption('Xdoclint:all,-missing', true)
-    // Document the public API only; the generated ANTLR parser is an implementation detail.
+    // Document the public API; parser implementation classes remain internal.
     include 'com/pingsu/transpiler/**'
-}
-
-generateGrammarSource {
-    // Token numbers affect the whole parser, even when only the lexer grammar changed.
-    // A non-file input invalidates ANTLR's per-file incremental generation in that case.
-    inputs.property('lexerVocabulary', providers.fileContents(
-            layout.projectDirectory.file('src/main/antlr/TypeScriptLexer.g4')).asText)
-    arguments += ['-visitor', '-no-listener']
-    packageName = 'com.pingsu.antlr'
-    maxHeapSize = '256m'
+    exclude 'com/pingsu/transpiler/internal/**'
 }
 
 // examples/ is sample input for library consumers and is also used by ExampleTest.
 sourceSets.test.resources.srcDir 'examples'
 
-test { useJUnitPlatform() }
+test {
+    useJUnitPlatform()
+    systemProperty 'translanguage.evidence.dir', layout.buildDirectory.dir('compilation-evidence').get().asFile.absolutePath
+}
 
 tasks.withType(Jar).configureEach {
     manifest {
@@ -94,3 +97,18 @@ publishing {
         }
     }
 }
+
+apply from: 'gradle/consumer-verification.gradle'
+
+tasks.named('generateReferenceGrammarSource') {
+    inputs.property('lexerVocabulary', providers.fileContents(
+            layout.projectDirectory.file('src/reference/antlr/TypeScriptLexer.g4')).asText)
+    arguments += ['-visitor', '-no-listener']
+    packageName = 'com.pingsu.reference.antlr'
+    maxHeapSize = '256m'
+}
+tasks.named('processTestResources') {
+    from('docs/baseline/2026-11-01/compilation-evidence.zip') { into 'baseline' }
+}
+
+apply from: 'gradle/release-verification.gradle'

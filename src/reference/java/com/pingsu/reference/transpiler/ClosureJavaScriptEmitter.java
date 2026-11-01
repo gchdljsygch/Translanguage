@@ -1,4 +1,4 @@
-package com.pingsu.transpiler;
+package com.pingsu.reference.transpiler;
 
 import com.google.javascript.jscomp.CompilerOptions;
 import com.google.javascript.jscomp.CheckLevel;
