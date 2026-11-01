@@ -5,6 +5,7 @@ import com.pingsu.antlr.TypeScriptParserBaseVisitor;
 
 /** Emits runtime enum objects. Literal initializers only; computed values fail explicitly. */
 public final class EnumLoweringPass implements TransformationPass {
+    /** {@inheritDoc} */
     @Override public void transform(TransformationContext context) {
         new TypeScriptParserBaseVisitor<Void>() {
             @Override public Void visitAmbientDeclaration(AmbientDeclarationContext node) { return null; }

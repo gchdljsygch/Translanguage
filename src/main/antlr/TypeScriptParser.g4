@@ -603,9 +603,9 @@ classElement
     ;
 
 propertyMemberDeclaration
-    : propertyMemberBase propertyName callSignature (('{' functionBody '}') | SemiColon) # MethodDeclarationExpression
+    : propertyMemberBase (getAccessor | setAccessor)                                     # GetterSetterDeclarationExpression
+    | propertyMemberBase propertyName callSignature (('{' functionBody '}') | SemiColon) # MethodDeclarationExpression
     | propertyMemberBase propertyName ('?' | '!')? typeAnnotation? initializer? eos        # PropertyDeclarationExpression
-    | propertyMemberBase (getAccessor | setAccessor)                                     # GetterSetterDeclarationExpression
     | abstractDeclaration                                                                # AbstractMemberDeclaration
     ;
 
@@ -737,8 +737,11 @@ expressionSequence
 
 singleExpression
     : anonymousFunction                                           # FunctionExpression
+    | Import '(' singleExpression ')'                             # ImportExpression
+    | Import '.' identifierName                                    # ImportMetaExpression
     | Class identifier? typeParameters? classHeritage classTail   # ClassExpression
     | singleExpression '?.'? '[' expressionSequence ']'           # MemberIndexExpression
+    | singleExpression '?.' arguments                              # OptionalCallExpression
     | singleExpression '?.' singleExpression                      # OptionalChainExpression
     | singleExpression '!'? '.' '#'? identifierName typeGeneric?  # MemberDotExpression
     | singleExpression '?'? '.' '#'? identifierName typeGeneric?  # MemberDotExpression
@@ -840,6 +843,8 @@ assignmentOperator
     | '|='
     | '**='
     | '??='
+    | '&&='
+    | '||='
     ;
 
 literal

@@ -34,13 +34,13 @@ public abstract class TypeScriptParserBase extends Parser
     }
 
     /**
-     * Whether the next token value equals to @param str
+     * Whether the next token value equals {@code str}.
      */
     protected boolean next(String str) {
         return _input.LT(1).getText().equals(str);
     }
 
-    /** TypeScript resolves f<T>(x) as a generic call, not two comparisons. */
+    /** TypeScript resolves {@code f<T>(x)} as a generic call, not two comparisons. */
     protected boolean isTypeArgumentCall() {
         if (_input.LA(1) != TypeScriptParser.LessThan) return false;
         int position = _input.index();

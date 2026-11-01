@@ -1,33 +1,40 @@
 plugins {
-    id 'java'
+    id 'java-library'
     id 'antlr'
-    id 'application'
+    id 'maven-publish'
 }
 
+// Translanguage is a library-only project: other programs embed it as a dependency.
+// It deliberately has no application plugin, main class, run task, or distribution.
 group = 'com.pingsu'
-version = '1.0.0'
+version = '1.0.1'
+description = 'TypeScript to JavaScript transpiler library (library only; no CLI or standalone tool).'
 
 repositories { mavenCentral() }
 
 dependencies {
     antlr 'org.antlr:antlr4:4.13.2'
     api 'org.antlr:antlr4-runtime:4.13.2'
+    // Pinned to the Java 17-compatible release; used only for explicit output targets.
+    implementation 'com.google.javascript:closure-compiler:v20240317'
     testImplementation platform('org.junit:junit-bom:6.0.0')
     testImplementation 'org.junit.jupiter:junit-jupiter'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    // Independent JavaScript parser: assert the actual ES grammar of emitted artifacts.
+    testRuntimeOnly 'org.webjars.npm:acorn:8.15.0'
 }
 
 // Gradle's ANTLR plugin adds the generator to api by default.
-// The generated parser only needs antlr4-runtime in the application distribution.
+// Consumers only need antlr4-runtime; the generator stays a build-only dependency.
 configurations.api {
     setExtendsFrom(extendsFrom.findAll { it.name != 'antlr' })
 }
 
-application { mainClass = 'com.pingsu.Main' }
-
 java {
     sourceCompatibility = JavaVersion.VERSION_17
     targetCompatibility = JavaVersion.VERSION_17
+    withSourcesJar()
+    withJavadocJar()
 }
 
 tasks.withType(JavaCompile).configureEach {
@@ -35,19 +42,55 @@ tasks.withType(JavaCompile).configureEach {
     options.release = 17
 }
 
+tasks.withType(Javadoc).configureEach {
+    options.encoding = 'UTF-8'
+    options.addBooleanOption('Xdoclint:all,-missing', true)
+    // Document the public API only; the generated ANTLR parser is an implementation detail.
+    include 'com/pingsu/transpiler/**'
+}
+
 generateGrammarSource {
-    arguments += ['-visitor', '-no-listener', '-package', 'com.pingsu.antlr']
+    // Token numbers affect the whole parser, even when only the lexer grammar changed.
+    // A non-file input invalidates ANTLR's per-file incremental generation in that case.
+    inputs.property('lexerVocabulary', providers.fileContents(
+            layout.projectDirectory.file('src/main/antlr/TypeScriptLexer.g4')).asText)
+    arguments += ['-visitor', '-no-listener']
+    packageName = 'com.pingsu.antlr'
     maxHeapSize = '256m'
 }
 
-run { standardInput = System.in }
+// examples/ is sample input for library consumers and is also used by ExampleTest.
+sourceSets.test.resources.srcDir 'examples'
+
 test { useJUnitPlatform() }
 
-distributions {
-    main {
-        contents {
-            from('README.md', 'THIRD_PARTY_NOTICES.md')
-            from('examples') { into 'examples' }
+tasks.withType(Jar).configureEach {
+    manifest {
+        attributes(
+                'Automatic-Module-Name': 'com.pingsu.transpiler',
+                'Implementation-Title': 'Translanguage',
+                'Implementation-Version': project.version)
+    }
+}
+
+tasks.named('jar') {
+    from('THIRD_PARTY_NOTICES.md') { into 'META-INF' }
+}
+
+publishing {
+    publications {
+        library(MavenPublication) {
+            from components.java
+            pom {
+                name = 'Translanguage'
+                description = project.description
+            }
+        }
+    }
+    repositories {
+        maven {
+            name = 'buildRepo'
+            url = layout.buildDirectory.dir('repo')
         }
     }
 }

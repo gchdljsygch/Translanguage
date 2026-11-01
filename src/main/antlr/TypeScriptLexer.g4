@@ -112,6 +112,8 @@ BitXorAssign               : '^=';
 BitOrAssign                : '|=';
 PowerAssign                : '**=';
 NullishCoalescingAssign    : '??=';
+LogicalAndAssign           : '&&=';
+LogicalOrAssign            : '||=';
 ARROW                      : '=>';
 
 /// Null Literals

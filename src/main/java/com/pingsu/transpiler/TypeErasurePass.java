@@ -12,6 +12,7 @@ import java.util.stream.Collectors;
 
 /** All erasure decisions are made from parser contexts, never from source-text patterns. */
 public final class TypeErasurePass implements TransformationPass {
+    /** {@inheritDoc} */
     @Override public void transform(TransformationContext context) {
         Visitor visitor = new Visitor(context);
         visitor.visit(context.program());
