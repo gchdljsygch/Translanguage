@@ -15,6 +15,7 @@ public final class ObjectRestLowering implements LoweringPass {
     private static final class Printer extends JavaScriptPrinter {
         private final ScopeAnalysis scopes;
         private String helper;
+        private boolean arrayAdapter, recoverSource;
         private GeneratorContext generatorContext;
         private final class GeneratorContext {
             final String arguments=scopes.fresh("arguments"),get=scopes.fresh("superGet"),set=scopes.fresh("superSet");
@@ -46,6 +47,7 @@ public final class ObjectRestLowering implements LoweringPass {
                 return pattern.source() + "=" + wrap(render(node.child(1)), pattern.plan());
             }
             if (node.is("assignmentExpression") && node.attribute("operator").equals("=") && hasRest(node.child(0))) {
+                recoverSource = true;
                 Pattern pattern = pattern(node.child(0));
                 return helper() + "((" + pattern.source() + "=" + wrap(render(node.child(1)), pattern.plan()) + "))";
             }
@@ -178,6 +180,7 @@ public final class ObjectRestLowering implements LoweringPass {
                 return new Pattern("{" + String.join(",", members) + "}", "['o',[" + String.join(",", plans) + "]]");
             }
             if (node.is("arrayBinding") || node.is("arrayLiteral")) {
+                arrayAdapter = true;
                 List<String> elements = new ArrayList<>(), plans = new ArrayList<>(); int tail = -1; int cursor = node.range().start()+1;
                 for (JsNode element : node.children()) {
                     if (element.is("bindingElision")) { elements.add(""); plans.add("null"); cursor = element.range().end(); continue; }
@@ -211,16 +214,16 @@ public final class ObjectRestLowering implements LoweringPass {
         }
         private String definition() {
             return "function " + helper + "(source,plan){\n" +
-                "if(arguments.length===1)return " + helper + ".sources.get(source);\n" +
+                (recoverSource ? "if(arguments.length===1)return " + helper + ".sources.get(source);\n" : "") +
                 "if(source===null||source===void 0)throw new TypeError('Cannot destructure null or undefined');\n" +
-                "if(!" + helper + ".key){" + helper + ".key=Symbol();" + helper + ".sources=new WeakMap();}\n" +
+                "if(!" + helper + ".key){" + helper + ".key=Symbol();" + (recoverSource ? helper + ".sources=new WeakMap();" : "") + "}\n" +
                 "var object=Object(source),index=0,excluded=[],result;\n" +
                 "function nested(value,child){return !child||value===void 0?value:" + helper + "(value,child);}\n" +
-                "if(plan[0]==='o')result=new Proxy({}, {get:function(unused,key){\n" +
+                (arrayAdapter ? "if(plan[0]==='o')" : "") + "result=new Proxy({}, {get:function(unused,key){\n" +
                 "if(key===" + helper + ".key){var rest={};Reflect.ownKeys(object).forEach(function(k){if(excluded.indexOf(k)<0&&Object.prototype.propertyIsEnumerable.call(object,k))Object.defineProperty(rest,k,{value:object[k],writable:true,enumerable:true,configurable:true});});return rest;}\n" +
                 "excluded.push(key);return nested(Reflect.get(object,key,source),plan[1][index++]);}});\n" +
-                "else result={[Symbol.iterator]:function(){var iterator=source[Symbol.iterator](),next=iterator.next,finished=false;return {next:function(){var slot=index++;if(slot===plan[2]){var tail=[];while(true){var item=Reflect.apply(next,iterator,[]);if(Object(item)!==item)throw new TypeError('Iterator result is not an object');if(item.done){finished=true;break;}tail.push(item.value);}return {done:false,value:nested(tail,plan[1][slot])};}var step=Reflect.apply(next,iterator,[]);if(Object(step)!==step)throw new TypeError('Iterator result is not an object');return new Proxy({},{get:function(target,key){var value=Reflect.get(step,key,step);return key==='value'?nested(value,plan[1][slot]):value;}});},get return(){if(finished)return void 0;var close=iterator.return;return close==null?void 0:function(){return Reflect.apply(close,iterator,[]);};}};}};\n" +
-                helper + ".sources.set(result,source);return result;\n}";
+                (arrayAdapter ? "else result={[Symbol.iterator]:function(){var iterator=source[Symbol.iterator](),next=iterator.next,finished=false;return {next:function(){var slot=index++;if(slot===plan[2]){var tail=[];while(true){var item=Reflect.apply(next,iterator,[]);if(Object(item)!==item)throw new TypeError('Iterator result is not an object');if(item.done){finished=true;break;}tail.push(item.value);}return {done:false,value:nested(tail,plan[1][slot])};}var step=Reflect.apply(next,iterator,[]);if(Object(step)!==step)throw new TypeError('Iterator result is not an object');return new Proxy({},{get:function(target,key){var value=Reflect.get(step,key,step);return key==='value'?nested(value,plan[1][slot]):value;}});},get return(){if(finished)return void 0;var close=iterator.return;return close==null?void 0:function(){return Reflect.apply(close,iterator,[]);};}};}};\n" : "") +
+                (recoverSource ? helper + ".sources.set(result,source);" : "") + "return result;\n}";
         }
     }
 }

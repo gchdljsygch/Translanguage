@@ -37,6 +37,10 @@ public final class DefaultJavaScriptEmitter implements JavaScriptEmitter {
                             }
                         }.print();
                 transition(State.PARSED, State.TRANSFORMED);
+                JsProgram lowered = JsProgram.parse(sourceName, result);
+                validator.validate(lowered, target);
+                result = new ReadableJavaScriptPrinter(lowered).print();
+                // Formatting is part of emission: validate the exact text returned to callers.
                 validator.validate(JsProgram.parse(sourceName, result), target);
                 return new TranspileResult(result, List.of());
             } catch (TargetFailure failure) { return new TranspileResult("", failure.diagnostics()); }
