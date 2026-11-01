@@ -1,20 +1,53 @@
 plugins {
     id 'java'
+    id 'antlr'
+    id 'application'
 }
 
-group = 'com.mpp'
-version = '1.0-SNAPSHOT'
+group = 'com.pingsu'
+version = '1.0.0'
 
-repositories {
-    mavenCentral()
-}
+repositories { mavenCentral() }
 
 dependencies {
+    antlr 'org.antlr:antlr4:4.13.2'
+    api 'org.antlr:antlr4-runtime:4.13.2'
     testImplementation platform('org.junit:junit-bom:6.0.0')
     testImplementation 'org.junit.jupiter:junit-jupiter'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
-test {
-    useJUnitPlatform()
+// Gradle's ANTLR plugin adds the generator to api by default.
+// The generated parser only needs antlr4-runtime in the application distribution.
+configurations.api {
+    setExtendsFrom(extendsFrom.findAll { it.name != 'antlr' })
+}
+
+application { mainClass = 'com.pingsu.Main' }
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = 17
+}
+
+generateGrammarSource {
+    arguments += ['-visitor', '-no-listener', '-package', 'com.pingsu.antlr']
+    maxHeapSize = '256m'
+}
+
+run { standardInput = System.in }
+test { useJUnitPlatform() }
+
+distributions {
+    main {
+        contents {
+            from('README.md', 'THIRD_PARTY_NOTICES.md')
+            from('examples') { into 'examples' }
+        }
+    }
 }
