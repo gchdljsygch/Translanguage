@@ -6,6 +6,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
+import static com.pingsu.transpiler.internal.parser.IdentifierRules.spelling;
+
 /** Type declarations, ambient declarations, enums and ES modules. */
 final class DeclarationParser implements GrammarRules.Declarations {
     private final AbstractParseSession context;
@@ -108,16 +110,34 @@ final class DeclarationParser implements GrammarRules.Declarations {
             while (!context.at("}")) {
                 int specStart = context.start(); boolean type = context.at("type") && !Set.of("as", ",", "}").contains(context.nextText());
                 if (type) { context.ts(); context.take(); }
-                bindings.propertyName(); if (context.eat("as")) { if (exporting) bindings.propertyName(); else bindings.bindingIdentifier(); }
-                specifiers.add(context.node(type ? "typeSpecifier" : "moduleSpecifier", specStart));
+                ParsedNode original = bindings.propertyName();
+                String localName = context.text(original);
+                if (context.eat("as")) {
+                    if (exporting) bindings.propertyName();
+                    else localName = context.text(bindings.bindingIdentifier());
+                }
+                specifiers.add(context.node(type ? "typeSpecifier" : "moduleSpecifier", specStart)
+                        .with("localName", localName.startsWith("\"") || localName.startsWith("'") ? "" : spelling(localName)));
                 if (!context.eat(",")) break;
             }
             context.expect("}"); children.add(context.node("moduleItems", begin, specifiers));
-        } else if (context.eat("*")) { if (context.eat("as")) { var name = bindings.bindingIdentifier(); if (exporting) namespaceExport = context.text(name); } }
-        if (!exporting || context.at("from")) { context.expect("from"); if (context.peek().kind() != TokenKind.STRING) throw context.failure(context.peek(), "Expected module string"); context.take(); }
+        } else if (context.at("*")) {
+            int begin = context.start(); context.take();
+            if (context.eat("as")) {
+                var name = bindings.bindingIdentifier();
+                if (exporting) namespaceExport = context.text(name);
+                else children.add(context.node("namespaceImport", begin, name).with("localName", spelling(context.text(name))));
+            }
+        }
+        String moduleSource = "";
+        if (!exporting || context.at("from")) {
+            context.expect("from");
+            if (context.peek().kind() != TokenKind.STRING) throw context.failure(context.peek(), "Expected module string");
+            moduleSource = context.take().text();
+        }
         context.semicolon();
         return context.node(exporting ? "exportDeclaration" : "importDeclaration", start, children)
                 .with("typeOnly", Boolean.toString(typeOnly)).with("defaultBinding", Boolean.toString(hasDefault))
-                .with("namespaceExport", namespaceExport);
+                .with("namespaceExport", namespaceExport).with("moduleSource", moduleSource);
     }
 }

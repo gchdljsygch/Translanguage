@@ -76,7 +76,9 @@ class TypeScriptTransformTest {
             """, "b d");
         assertEquals("\nexport {};\n", compile("export type X = string;"));
         assertEquals("", compile("declare namespace N { export const x: number; export interface I {} }"));
-        assertEquals("import path, {  } from 'node:path';", compile("import path, {type X} from 'node:path';"));
+        assertEquals("\nexport {};\n", compile("import path, {type X} from 'node:path';"));
+        assertEquals("import path from 'node:path'; console.log(path);",
+                compile("import path, {type X} from 'node:path'; console.log(path);"));
     }
     @Test void enumLiteralsAndConstEnumsRetainReverseMappings() throws Exception {
         runs("""

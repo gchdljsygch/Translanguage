@@ -6,20 +6,26 @@ import com.pingsu.transpiler.internal.js.JsNode;
 import com.pingsu.transpiler.internal.js.JsProgram;
 import com.pingsu.transpiler.internal.js.ScopeAnalysis;
 import com.pingsu.transpiler.syntax.*;
+import com.pingsu.transpiler.internal.typescript.ImportElision;
+import static com.pingsu.transpiler.internal.typescript.TypeOnlySyntax.DECLARATIONS;
+import static com.pingsu.transpiler.internal.typescript.TypeOnlySyntax.ERASED;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
 import java.util.stream.Collectors;
 
-/** Type erasure and parameter properties over the library's immutable syntax tree. */
+/** Type erasure, import elision and parameter properties over the immutable syntax tree. */
 public final class TypeErasurePass implements TransformationPass {
-    private static final Set<String> DECLARATIONS = Set.of("interfaceDeclaration", "typeAliasDeclaration", "ambientDeclaration", "overloadDeclaration", "indexMemberDeclaration");
-    private static final Set<String> ERASED = Set.of("typeAnnotation", "typeParameters", "typeArguments", "implementsClause", "typeModifier", "typeAssertion", "thisParameter");
     @Override public void transform(TransformationContext context) {
-        boolean[] erasedModule = {false};
+        boolean[] erasedModule = {false}, runtimeModule = {false};
+        ImportElision imports = new ImportElision(context);
         context.program().walk(node -> {
             if (node instanceof ParsedNode parsed) {
-                if (node.kind().equals("importDeclaration") || node.kind().equals("exportDeclaration")) {
+                if (node.kind().equals("importDeclaration")) {
+                    if (imports.transform(parsed)) runtimeModule[0] = true;
+                    else erasedModule[0] = true;
+                    return false;
+                }
+                if (node.kind().equals("exportDeclaration")) {
                     SyntaxNode items = node.children().stream().filter(n -> n.kind().equals("moduleItems")).findFirst().orElse(null);
                     boolean allTypes = items != null && !items.children().isEmpty()
                             && items.children().stream().allMatch(n -> n.kind().equals("typeSpecifier"))
@@ -28,6 +34,7 @@ public final class TypeErasurePass implements TransformationPass {
                             || node.children().stream().anyMatch(n -> DECLARATIONS.contains(n.kind()))) {
                         context.remove(node); erasedModule[0] = true; return false;
                     }
+                    runtimeModule[0] = true;
                 }
                 if (node.kind().equals("moduleItems")) {
                     if (node.children().stream().anyMatch(n -> n.kind().equals("typeSpecifier"))) {
@@ -41,7 +48,7 @@ public final class TypeErasurePass implements TransformationPass {
             if (DECLARATIONS.contains(node.kind()) || ERASED.contains(node.kind())) { context.remove(node); return false; }
             return !node.kind().equals("enumDeclaration");
         });
-        if (erasedModule[0]) context.append("\nexport {};\n");
+        if (erasedModule[0] && !runtimeModule[0]) context.append("\nexport {};\n");
     }
     private static void parameterProperties(TransformationContext context, ParsedNode constructor) {
         SyntaxNode parameters = constructor.children().stream().filter(n -> n.kind().equals("parameters")).findFirst().orElseThrow();

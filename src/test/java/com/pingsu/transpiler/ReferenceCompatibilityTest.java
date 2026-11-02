@@ -76,7 +76,18 @@ class ReferenceCompatibilityTest {
                     return;
                 }
                 assertEquals(expected.successful(), actual.successful());
-                if (targetName.equals("PRESERVE")) assertEquals(expected.javaScript(), actual.javaScript());
+                if (targetName.equals("PRESERVE")) {
+                    if (id.contains("explicitTypeOnlyImportsDoNotLoadModules-")) {
+                        // This fixture already has a value export. Import elision now adds a module
+                        // marker only when needed; the frozen old backend remains checked above.
+                        String marker = "\nexport {};\n";
+                        assertTrue(expected.javaScript().endsWith(marker));
+                        assertEquals(expected.javaScript().substring(0, expected.javaScript().length() - marker.length()), actual.javaScript());
+                        var runtime = new JavaScriptRuntime(temporary);
+                        runtime.syntax(2022, "module", actual.javaScript());
+                        assertEquals(runtime.run(expected.javaScript()), runtime.run(actual.javaScript()));
+                    } else assertEquals(expected.javaScript(), actual.javaScript());
+                }
                 else if (actual.successful()) {
                     var runtime = new JavaScriptRuntime(temporary);
                     runtime.syntax(JavaScriptTarget.valueOf(targetName), actual.javaScript());

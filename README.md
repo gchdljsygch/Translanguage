@@ -132,7 +132,7 @@ if (result.successful()) {
 
 | 目标枚举 | 输出语法行为 | 适用场景 |
 | --- | --- | --- |
-| `JavaScriptTarget.PRESERVE`（默认） | 仅擦除 TS 类型并转换枚举/参数属性；保留原运行时 JS 语法与未修改区域的空白、换行和注释。 | 后续接入现代打包器/运行时，或希望尽量保留原始代码排版。 |
+| `JavaScriptTarget.PRESERVE`（默认） | 擦除 TS 类型、省略无运行时引用的导入并转换枚举/参数属性；保留其余运行时 JS 语法与未修改区域的空白、换行和注释。 | 后续接入现代打包器/运行时，或希望尽量保留原始代码排版。 |
 | `JavaScriptTarget.ES2021` | 重新打印代码，确保语法不超过 ECMAScript 2021；原生保留 `async`/`await`、可选链、空值合并、BigInt、动态 `import()` 和 `import.meta`，同时降级公开类字段并移除数字分隔符。 | 现代浏览器或 Node.js 环境，需兼容尚未支持 ES2022 类字段的引擎。 |
 | `JavaScriptTarget.ES6` | 重新打印代码，确保语法不超过 ECMAScript 2015（ES6）；自动降级 `async`/`await`、异步生成器、`for await...of`、可选链 `?.`、空值合并 `??`、逻辑赋值、幂运算 `**`、对象展开/剩余、可选 `catch` 绑定、数字分隔符、`export * as ns` 以及公开类字段。 | 仅支持 ES6 语法的运行时环境。 |
 
@@ -140,7 +140,7 @@ if (result.successful()) {
 
 - **自包含辅助函数**：`ES6` 异步控制流、类字段定义与对象剩余解构所需的辅助函数（helper）会按需去重内联到输出代码中，生成代码无需引入额外 runtime 包。对象剩余解构仅在需要时生成数组迭代适配器和赋值结果回溯表。
 - **精简且可读的输出**：安全的实例字段直接在构造函数中定义，保留原生 `class`；需要独立初始化作用域的字段继续使用语义完整的降级路径，并省略未使用的 Symbol 和初始化变量。最终代码按语法树组织换行、两空格缩进与运算符间距，保持现有换行语义和模板原文。具体边界与体积对比见 [显式目标输出优化](docs/OUTPUT_QUALITY.md)。
-- **保留 ES 模块**：`import` / `export` 保持为标准 ES 模块语法，不打包、不解析也不改写模块路径；`export * as ns from 'mod'` 在 `ES6` 下会降级为命名空间导入加命名导出，保留实时绑定（live binding）。
+- **保留 ES 模块**：经 import elision 保留的 `import` / `export` 仍使用标准 ES 模块语法，不打包、不解析也不改写模块路径；`export * as ns from 'mod'` 在 `ES6` 下会降级为命名空间导入加命名导出，保留实时绑定（live binding）。
 - **类字段语义**：实例和静态公开类字段通过 `Object.defineProperty` 降级，保留自有属性语义（含无初始值字段）；构造函数参数属性保持 `this.prop = prop;` 赋值语义。
 - **仅降级语法，不注入业务 Polyfill**：目标版本约束的是**语法**，不会为业务代码自动注入 `Promise.any`、`Array.prototype.includes` 等标准库 API 的 polyfill。运行 `ES6` 降级产物需要宿主具备 ES6 标准内置对象（`Promise`、`Symbol`、`Reflect`、`Proxy`、`WeakMap`）。
 - **语法复核**：显式目标在生成代码后会重新解析并校验最终 AST，确保不会将残留高版本语法的产物标记为成功。
@@ -236,8 +236,16 @@ Transpiler transpiler = new TypeScriptTranspiler(
 - **纯类型声明擦除**：`interface`、`type` 别名、`declare` 环境声明、函数/方法/构造器重载签名、索引签名。
 - **泛型与断言擦除**：泛型声明、类型约束、默认类型参数、泛型调用、泛型箭头函数、`implements` 子句、`as` / `satisfies` / `<T>` 类型断言、`!` 非空断言与确定赋值断言。
 - **类与修饰符**：擦除 `public` / `protected` / `private` / `readonly` / `override` / `abstract`；转换构造函数参数属性；派生类支持分支、循环、短路/条件表达式、返回表达式及词法箭头函数中的 `super()`，按“父类构造 → 实例字段 → 参数属性”的顺序初始化，并保留 `super()` 表达式的返回值和异常行为。
-- **模块导入导出**：擦除 `import type` / `export type` 及混合导入导出中的 `type` 项；若模块内所有导入导出均被作为纯类型擦除，会自动补充 `export {};` 以维持 ES 模块作用域语义。
+- **模块导入导出与 Import Elision**：所有目标默认擦除 `import type` / `export type` 及混合导入导出中的 `type` 项，并按文件内的词法绑定删除未使用或仅用于类型的普通导入，支持默认、命名、别名及命名空间导入的逐项删减。运行时表达式、本地值导出、计算属性名和对象简写中的引用会保留对应导入；同名参数、局部变量、catch 绑定和枚举成员不会误保留外层导入。显式副作用导入 `import './setup'` 和空列表导入 `import {} from './setup'` 保留；若所有静态导入导出均被擦除，会补充一次 `export {};` 维持 ES 模块作用域。
+
 - **枚举（`enum` / `const enum`）**：支持数字/字符串、算术与位运算、成员引用、函数调用及其他同步表达式的运行时求值；按声明顺序单次求值，数字结果生成反向映射，字符串结果不生成反向映射。同作用域的合并声明可引用已有成员；回调参数、局部变量及属性名不会被误改写。数字常量表达式后的成员可自动递增；字符串或无法静态识别为数字常量的计算成员之后必须显式初始化。`const enum` 同样生成运行时对象，不做跨表达式内联。
+
+```ts
+import DefaultType, { User, createUser } from './users';
+const user: User = createUser();
+```
+
+默认输出仅保留 `import { createUser } from './users';`，并擦除 `user` 的类型注解。若需要执行只提供类型或未使用绑定的模块的副作用，请另写显式副作用导入。此行为属于默认 `TypeErasurePass`；自定义 pass 列表仍严格按调用方配置执行。
 
 ---
 
@@ -246,7 +254,7 @@ Transpiler transpiler = new TypeScriptTranspiler(
 Translanguage 是一个专注于单文件语法转换的库，**不是**完整的 TypeScript 编译器（`tsc`）替代品：
 
 1. **不做类型检查与跨文件分析**：仅解析并擦除类型语法，不验证类型正确性，不读取 `tsconfig.json`，不解析外部模块路径，也不生成 `.d.ts` 或 Source Map。
-2. **不做隐式类型导入省略（Import Elision）**：不绑定符号表，因此不会根据标识符是否仅用作类型来隐式删除普通 `import { Foo } from './bar'`。仅用于类型的导入请显式编写 `import type { Foo }` 或 `import { type Foo }`。
+2. **Import Elision 的分析边界**：只分析当前文件的语法与运行时绑定，不查询依赖模块中某个导出究竟是类型还是值。普通本地 `export { Foo }` 视为值引用；类型重导出请写 `export type { Foo }` 或 `export { type Foo }`。带 `from` 的普通重导出不按本地使用情况删除。直接 `eval(...)` 会保守保留其作用域可见的普通导入，显式类型导入仍擦除。
 3. **不支持的 TS 特性（返回 `TS_UNSUPPORTED` 或 `TS_SYNTAX`）**：
    - JSX / TSX 语法
    - 运行时 `namespace` / `module`（`declare namespace` 环境声明支持擦除）
