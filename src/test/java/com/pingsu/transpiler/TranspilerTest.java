@@ -208,9 +208,9 @@ class TranspilerTest {
         for (String source : new String[]{
                 "namespace Runtime { export const x = 1; }",
                 "@decorate class C {}",
-                "enum E { A = calculate() }",
+                "enum E { A = calculate(), B }",
                 "enum E { A = 'a', B }",
-                "class B {} class C extends B { constructor(public x: number) { if (x) super(); else super(); } }"}) {
+                "class B {} class C extends B { constructor(public {x}: {x:number}) { super(); } }"}) {
             TranspileResult result = transpiler.transpile("unsupported.ts", source);
             assertFalse(result.successful(), source);
             assertEquals("", result.javaScript());

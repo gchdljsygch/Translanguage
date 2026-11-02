@@ -9,6 +9,7 @@ public final class ClassFieldsLowering implements LoweringPass {
     @Override public String lower(JsProgram program) { return new Printer(program).print(); }
     private static final class Printer extends ScopedJavaScriptPrinter {
         private String defineField;
+        private final IdentityHashMap<JsNode, String> superInitializers = new IdentityHashMap<>();
         private int fieldCount;
         private final IdentityHashMap<JsNode, String> names = new IdentityHashMap<>();
         private final IdentityHashMap<JsNode, JsNode> parents = new IdentityHashMap<>();
@@ -26,6 +27,9 @@ public final class ClassFieldsLowering implements LoweringPass {
         }
         private boolean fields(JsNode node) { return node.children().stream().anyMatch(n -> n.is("propertyDeclaration") || n.is("staticBlock")); }
         @Override protected String render(JsNode node) {
+            if (superInitializers.containsKey(node)) {
+                return "(" + super.render(node) + "," + superInitializers.get(node) + "this)";
+            }
             if (node.is("objectMember") && node.children().size()==2 && node.child(0).is("computedName")) {
                 JsNode value=unparenthesized(node.child(1));
                 if(value.is("classExpression")&&fields(value)&&!simpleFields(value)&&className(value).isEmpty()) {
@@ -114,6 +118,7 @@ public final class ClassFieldsLowering implements LoweringPass {
             if (scopes.dynamic()) program.fail(owner, "Class field lowering with direct eval or with cannot preserve lexical visibility");
             Map<JsNode, String> members = new IdentityHashMap<>();
             StringBuilder initializers = new StringBuilder();
+            List<String> expressions = new ArrayList<>();
             JsNode constructor = null;
             for (JsNode member : owner.children()) {
                 if (member.is("constructorDeclaration")) constructor = member;
@@ -126,13 +131,14 @@ public final class ClassFieldsLowering implements LoweringPass {
                     value = render(initializer);
                     if (anonymous(valueNode)) value = "({[" + property + "]:" + value + "})[" + property + "]";
                 }
-                initializers.append(define("this", property, value));
+                String definition = define("this", property, value);
+                initializers.append(definition);
+                expressions.add(definition.substring(0, definition.length() - 2));
                 members.put(member, "");
             }
             if (constructor != null) {
                 JsNode body = constructor.children().stream().filter(n -> n.is("functionBody")).findFirst().orElseThrow();
-                String replacement = spliceBody(body, initializationPosition(owner, body), ";" + initializers);
-                members.put(constructor, children(constructor, n -> n == body ? replacement : render(n)));
+                members.put(constructor, initializeConstructor(owner, constructor, body, initializers.toString(), String.join(",", expressions) + ","));
             }
             String result = children(owner, n -> members.containsKey(n) ? members.get(n) : render(n));
             if (constructor == null) {
@@ -146,21 +152,27 @@ public final class ClassFieldsLowering implements LoweringPass {
             }
             return result;
         }
-        private int initializationPosition(JsNode owner, JsNode body) {
+        private String initializeConstructor(JsNode owner, JsNode constructor, JsNode body, String initialization, String expressions) {
             if (owner.attribute("derived").equals("true")) {
-                List<JsNode> calls = new ArrayList<>(); collectSuper(body, calls);
+                List<JsNode> calls = new ArrayList<>();
+                for (JsNode part : constructor.children()) calls.addAll(SuperCallSites.collect(part, JsNode::kind, JsNode::children));
                 JsNode direct = body.children().stream().filter(n -> n.is("expressionStatement")
                         && n.child(0).is("argumentsExpression") && n.child(0).child(0).is("superExpression")).findFirst().orElse(null);
-                if (calls.size() != 1 || direct == null)
-                    program.fail(owner, "Derived constructors with fields require one direct super() statement");
-                return direct.range().end();
+                if (calls.size() == 1 && direct != null) {
+                    String replacement = spliceBody(body, direct.range().end(), ";" + initialization);
+                    return children(constructor, n -> n == body ? replacement : render(n));
+                }
+                for (JsNode call : calls) superInitializers.put(call, expressions);
+                try { return children(constructor, this::render); }
+                finally { for (JsNode call : calls) superInitializers.remove(call); }
             }
             int insertion = body.range().start() + 1;
             for (JsNode statement : body.children()) {
                 if (statement.is("expressionStatement") && statement.child(0).is("stringLiteral")) insertion = statement.range().end();
                 else break;
             }
-            return insertion;
+            String replacement = spliceBody(body, insertion, ";" + initialization);
+            return children(constructor, n -> n == body ? replacement : render(n));
         }
         private String lowerClass(JsNode owner, String effectiveName) {
             if (scopes.dynamic()) program.fail(owner, "Class field lowering with direct eval or with cannot preserve lexical visibility");
@@ -199,9 +211,7 @@ public final class ClassFieldsLowering implements LoweringPass {
             }
             if (instance.length() > 0 && constructor != null) {
                 JsNode body = constructor.children().stream().filter(n -> n.is("functionBody")).findFirst().orElseThrow();
-                int position = initializationPosition(owner, body);
-                String replacement = spliceBody(body, position, ";" + init + ".call(this);\n");
-                members.put(constructor, children(constructor, n -> n == body ? replacement : render(n)));
+                members.put(constructor, initializeConstructor(owner, constructor, body, init + ".call(this);\n", init + ".call(this),"));
             }
             String classText = children(owner, n -> members.containsKey(n) ? members.get(n) : render(n));
             StringBuilder methods = new StringBuilder();
@@ -241,11 +251,6 @@ public final class ClassFieldsLowering implements LoweringPass {
             }
             if (!inserted) { result.append(program.source(), cursor, position).append(insertion); cursor = position; }
             return result.append(program.source(), cursor, body.range().end()).toString();
-        }
-        private void collectSuper(JsNode node, List<JsNode> calls) {
-            if (node.is("classExpression") || node.is("classDeclaration")) return;
-            if (node.is("argumentsExpression") && node.child(0).is("superExpression")) calls.add(node);
-            for (JsNode child : node.children()) collectSuper(child, calls);
         }
     }
 }

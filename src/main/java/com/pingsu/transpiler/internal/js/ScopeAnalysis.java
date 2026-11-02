@@ -30,10 +30,15 @@ public final class ScopeAnalysis {
         if (node.is("functionDeclaration") || node.is("classDeclaration")) {
             if (!node.children().isEmpty() && node.child(0).is("identifier")) scope.bindings.add(decode(program.text(node.child(0))));
         }
+        Scope enclosing = scope;
         if (Set.of("functionDeclaration", "functionExpression", "arrowFunction", "methodDeclaration", "constructorDeclaration").contains(node.kind())
                 || node.is("objectMember") && node.children().stream().anyMatch(n -> n.is("functionBody"))) scope = new Scope(scope, Kind.FUNCTION);
         else if (node.is("classDeclaration") || node.is("classExpression")) scope = new Scope(scope, Kind.CLASS);
-        else if (node.is("block") || node.is("functionBody")) scope = new Scope(scope, Kind.BLOCK);
+        // Parameter defaults cannot see body var/function declarations.
+        else if (node.is("functionBody") || node.is("staticBlock")) scope = new Scope(scope, Kind.FUNCTION);
+        else if (node.is("block") || node.is("forStatement") || node.is("switchStatement")) scope = new Scope(scope, Kind.BLOCK);
+        if (scope != enclosing && scope.kind == Kind.FUNCTION && !node.is("arrowFunction") && !node.is("functionBody") && !node.is("staticBlock"))
+            scope.bindings.add("arguments");
         scopes.put(node, scope);
         if (!node.attribute("bindingName").isEmpty()) {
             Scope owner=scope;
@@ -42,11 +47,22 @@ public final class ScopeAnalysis {
         }
         else if (node.is("identifier")) scope.references.add(decode(program.text(node)));
         if (node.is("withStatement") || node.is("argumentsExpression") && unwrapped(node.child(0)).is("identifier") && decode(program.text(unwrapped(node.child(0)))).equals("eval")) dynamic = true;
+        Scope catchScope = null;
         for (int i=0;i<node.children().size();i++) {
             JsNode child=node.child(i);String kind=declaration;
             if(node.is("variableStatement"))kind=program.significantTokens(node).get(0).text();
             if(node.is("variableDeclaration")&&i>0||node.is("functionBody")||node.is("parameters"))kind="";
-            visit(child,scope,program,kind);
+            Scope childScope = scope;
+            if ((node.is("methodDeclaration") || node.is("objectMember")) && child.is("computedName")) childScope = enclosing;
+            if (node.is("switchStatement") && i == 0) childScope = enclosing;
+            // The parser stores catch bindings and their block consecutively in tryStatement.
+            if (node.is("tryStatement") && !child.is("block")) {
+                if (catchScope == null) catchScope = new Scope(scope, Kind.BLOCK);
+                childScope = catchScope;
+            } else if (node.is("tryStatement") && catchScope != null) {
+                childScope = catchScope; catchScope = null;
+            }
+            visit(child,childScope,program,kind);
         }
     }
     private JsNode unwrapped(JsNode node) { while(node.is("parenthesizedExpression"))node=node.child(0);return node; }

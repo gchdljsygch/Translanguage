@@ -84,13 +84,10 @@ class TypeScriptTransformTest {
             console.log(E.first, E.Next, E[-1], E.More, E.Text, E.Last);
             """, "-2 -1 Next 1001 v 3");
     }
-    @Test void ambiguousDerivedConstructorsAndInvalidEnumsNeverReturnPartialOutput() {
+    @Test void unsupportedParameterPropertiesAndInvalidEnumsNeverReturnPartialOutput() {
         for (String source : List.of(
-                "class C extends B { constructor(public x:number) {super(); super();} }",
-                "class C extends B { constructor(public x:number) {if (x) super(); else super();} }",
-                "class C extends B { constructor(public x:number) {const run = () => super(); run();} }",
                 "class C {constructor(public {x}: {x:number}){}}",
-                "enum E { A=foo() }", "enum E {A='a', B}", "enum E { [foo()]=1 }", "enum E { 1=2 }",
+                "enum E { A=foo(), B }", "enum E {A='a', B}", "enum E { [foo()]=1 }", "enum E { 1=2 }",
                 "@decorator class C {}", "class C { #x=1 }", "namespace N {const x=1}")) {
             var result = compiler.transpile("unsupported.ts", source);
             assertFalse(result.successful(), source); assertEquals("", result.javaScript());

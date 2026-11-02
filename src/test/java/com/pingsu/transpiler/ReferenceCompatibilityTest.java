@@ -56,6 +56,25 @@ class ReferenceCompatibilityTest {
                 assertEquals(successful, expected.successful(), "Reference drift from frozen baseline");
                 assertEquals(files.get("output.mjs"), expected.javaScript(), "Reference output drift");
                 assertEquals(lines[3], expected.diagnostics().toString(), "Reference diagnostic drift");
+                // Reviewed syntax expansions: keep the frozen reference assertions above,
+                // but validate the newly supported production behavior independently.
+                String probe = switch (source) {
+                    case "enum E { A = calculate() }" -> "console.log(E.A,E[7]);";
+                    case "class B {} class C extends B { constructor(public x: number) { if (x) super(); else super(); } }" ->
+                            "console.log(new C(0).x,new C(1).x);";
+                    case "class B {} class C extends B { value = 1; constructor(flag) { if (flag) super(); else super(); } }" ->
+                            "console.log(new C(false).value,new C(true).value);";
+                    default -> null;
+                };
+                if (probe != null) {
+                    assertFalse(expected.successful());
+                    assertTrue(actual.successful(), actual.diagnostics().toString());
+                    var runtime = new JavaScriptRuntime(temporary);
+                    runtime.syntax(targetName.equals("PRESERVE") ? 2022 : targetName.equals("ES6") ? 2015 : 2021, "module", actual.javaScript());
+                    String wanted = source.startsWith("enum") ? "7 A" : source.contains("public x") ? "0 1" : "1 1";
+                    assertEquals(wanted, runtime.run("function calculate(){return 7;}" + actual.javaScript() + probe));
+                    return;
+                }
                 assertEquals(expected.successful(), actual.successful());
                 if (targetName.equals("PRESERVE")) assertEquals(expected.javaScript(), actual.javaScript());
                 else if (actual.successful()) {

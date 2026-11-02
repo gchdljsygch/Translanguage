@@ -1,1 +1,1 @@
-enum E{A=foo()}
+enum E{A=foo(),B}

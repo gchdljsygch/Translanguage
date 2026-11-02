@@ -25,17 +25,19 @@ final class SourceEdits {
         edits.add(new Edit(range, replacement));
     }
     void append(String text) { replace(SourceRange.at(source.length()), text); }
-    String render() {
+    String render() { return render(new SourceRange(0, source.length())); }
+    String render(SourceRange range) {
+        source.checkRange(range);
         // Stable sort preserves registration order at a shared insertion offset. An insertion at
         // a replacement's start precedes it; an insertion at its end follows it.
-        var ordered = new ArrayList<>(edits);
+        var ordered = new ArrayList<>(edits.stream().filter(e -> range.contains(e.range())).toList());
         ordered.sort(Comparator.comparingInt((Edit edit) -> edit.range().start()).thenComparingInt(edit -> edit.range().end()));
         StringBuilder output = new StringBuilder();
-        int cursor = 0;
+        int cursor = range.start();
         for (Edit edit : ordered) {
             output.append(source.text(), cursor, edit.range().start()).append(edit.replacement());
             cursor = edit.range().end();
         }
-        return output.append(source.text(), cursor, source.length()).toString();
+        return output.append(source.text(), cursor, range.end()).toString();
     }
 }

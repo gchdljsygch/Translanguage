@@ -1,6 +1,10 @@
 package com.pingsu.transpiler;
 
 import com.pingsu.transpiler.internal.parser.ParsedNode;
+import com.pingsu.transpiler.internal.lowering.SuperCallSites;
+import com.pingsu.transpiler.internal.js.JsNode;
+import com.pingsu.transpiler.internal.js.JsProgram;
+import com.pingsu.transpiler.internal.js.ScopeAnalysis;
 import com.pingsu.transpiler.syntax.*;
 import java.util.ArrayList;
 import java.util.List;
@@ -53,20 +57,39 @@ public final class TypeErasurePass implements TransformationPass {
         }
         if (assignments.isEmpty()) return;
         if (constructor.attribute("derived").equals("true")) {
-            List<? extends SyntaxNode> directCalls = body.children().stream().filter(TypeErasurePass::directSuperCall).toList();
-            int[] calls = {0};
-            body.walk(n -> {
-                if (Set.of("functionExpression", "functionDeclaration", "arrowFunction", "classDeclaration", "classExpression").contains(n.kind())) return false;
-                if (n.kind().equals("argumentsExpression") && n.children().get(0).kind().equals("superExpression")) calls[0]++;
-                return true;
-            });
-            if (directCalls.size() != 1 || calls[0] != 1) {
-                context.unsupported(constructor, "Derived parameter properties require a direct super() statement in the constructor."); return;
+            List<SyntaxNode> calls = SuperCallSites.collect(body, SyntaxNode::kind, SyntaxNode::children);
+            if (!SuperCallSites.collect(parameters, SyntaxNode::kind, SyntaxNode::children).isEmpty()) {
+                context.unsupported(constructor, "Parameter properties with super() in parameter initializers are not supported."); return;
             }
-            context.insert(directCalls.get(0).range().end(), ";\n" + String.join("\n", assignments) + "\n");
+            List<? extends SyntaxNode> directCalls = body.children().stream().filter(TypeErasurePass::directSuperCall).toList();
+            if (calls.size() == 1 && directCalls.size() == 1) {
+                context.insert(directCalls.get(0).range().end(), ";\n" + String.join("\n", assignments) + "\n");
+            } else if (!calls.isEmpty()) {
+                ScopeAnalysis scopes = new ScopeAnalysis(new JsProgram(context.sourceName(), context.source(),
+                        JsNode.from(context.program()), context.tokens()));
+                if (scopes.dynamic()) {
+                    context.unsupported(constructor, "Parameter property initialization across control flow with direct eval or with cannot preserve lexical visibility."); return;
+                }
+                // Capture the constructor's parameter bindings, even when a branch or arrow
+                // shadows their names. The arrow does not read this until super succeeds.
+                String initialize = scopes.fresh("parameters");
+                context.insert(directiveEnd(body), "\nconst " + initialize + " = () => {" + String.join("", assignments) + "};\n");
+                for (SyntaxNode call : calls) {
+                    context.insert(call.range().start(), "(");
+                    context.insert(call.range().end(), ", " + initialize + "(), this)");
+                }
+            }
         } else {
-            context.insert(body.range().start() + 1, "\n" + String.join("\n", assignments) + "\n");
+            context.insert(directiveEnd(body), "\n" + String.join("\n", assignments) + "\n");
         }
+    }
+    private static int directiveEnd(SyntaxNode body) {
+        int position = body.range().start() + 1;
+        for (SyntaxNode statement : body.children()) {
+            if (statement.kind().equals("expressionStatement") && statement.children().get(0).kind().equals("stringLiteral")) position = statement.range().end();
+            else break;
+        }
+        return position;
     }
     private static boolean directSuperCall(SyntaxNode node) {
         if (!node.kind().equals("expressionStatement") || node.children().size() != 1) return false;

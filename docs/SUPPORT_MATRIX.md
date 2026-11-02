@@ -63,13 +63,13 @@
 | 泛型、比较和表达式边界 | TS-002/013/014/015 | 词法 goal、checkpoint 回滚 | P2 已完成；Pratt/递归下降、有限试探、严格模式及独立 Acorn 接受/拒绝对照通过 |
 | 类型擦除、重载、修饰符 | TS-001/002/003/005/013 | 自有 SyntaxNode 编辑验证 | P3 已完成；重写 TypeErasurePass 并删除 ANTLR 适配器 |
 | 模块与纯类型声明 | TS-006/007/017/018、JT-005 | 冻结输入/输出差分 | P3 已完成；自有模块节点与标记维护，无路径解析或模块加载 |
-| 枚举 | TS-004/016/018、JT-005 | 冻结输入/输出差分 | P3 已完成；自有节点降级，字面量/递增/反向映射及拒绝测试通过 |
-| 参数属性 | TS-003/012/016、JT-003 | 冻结输入/输出差分 | P3 已完成；自有构造函数分析，setter/字段顺序/super 异常和多 super 拒绝验证通过 |
+| 枚举 | TS-004/016/018、JT-005 | 冻结输入/输出差分 | 支持同步计算表达式、成员引用、合并声明与作用域遮蔽；RuntimeSyntaxBoundaryTest 覆盖三目标单次求值、数字反向映射、类型擦除与异常顺序 |
+| 参数属性 | TS-003/012/016、JT-003 | 冻结输入/输出差分 | 支持分支/循环/表达式/词法箭头中的 super；RuntimeSyntaxBoundaryTest 验证参数捕获、setter/字段顺序、异常重试、重复 super 与替代对象返回 |
 | 可选链、空值 | JT-001、TS-014 | 原 Node receiver/顺序测试保留 | P5 已完成；引用模型、作用域临时变量、自有短路 lowering；括号调用/删除/标签 receiver 通过 |
 | 逻辑赋值、幂 | JT-001/013 | 原 Node 测试保留 | P5 已完成；LHS/key 表达式单次求值，读写 key 转换及 getter/setter/异常顺序对照通过 |
 | 展开与剩余 | JT-006、TS-019 | 原 Node 测试保留 | P5 已完成；Symbol、null/undefined、排除 key、Proxy 轨迹、嵌套绑定/赋值/参数/循环/catch 与迭代清理通过；展开保留 Object.assign 边界 |
 | catch、数字、尾逗号 | JT-001/006 | 自有数字 lexer 与 Acorn token oracle | P5 已完成；按节点/token 处理，并在最终重解析中检查 |
-| 类字段 | JT-003/004/007 | 原描述符/继承 setter/计算 key 测试保留 | P4 已完成；DefineField、继承 setter、顺序、唯一直接 super、描述符及计算 key 转换通过 |
+| 类字段 | JT-003/004/007 | 原描述符/继承 setter/计算 key 测试保留 | DefineField、继承 setter、描述符及计算 key 转换通过；新增任意控制流 super 与构造函数参数默认值中的字段初始化验证 |
 | 类名、表达式、导出 | JT-004/007/009 | 原 Node 反射与静态 super 测试保留 | P4 已完成；自有作用域、类名、默认导出、字段函数名、this/super 与反射无内部成员泄漏通过 |
 | async/await | JT-002、TS-019 | 原 Node finally/receiver 测试保留 | P6 已完成；自有 Promise 驱动、参数初始化、arguments/this/super、箭头捕获、thenable 和异常/微任务顺序通过 |
 | async generator/for-await | JT-008 | 原 Node break/清理测试保留 | P6 已完成；自有请求队列、yield*、IteratorClose、throw/return/rejection、标签和循环头 TDZ 通过 |
@@ -121,3 +121,15 @@
 - `verifyPerformanceJdk17/25`：固定输入、阶段、预热、采样、输出增长、256 MiB heap、深层失败和 2 MiB 制品预算。
 - `verifyOfflineArtifacts`：绑定正式主 JAR 和消费源码摘要，校验无网卡 guest 的 8 份产物；缺少隔离证据会阻断 `verifyRelease`。
 - 双 JDK 干净完整构建与中文/空格路径构建通过。详细日志、清单、摘要、JUnit 和性能报告见 [P8 证据](verification/2026-11-02-p8/)。
+
+
+## 构造与枚举语法边界扩展（2026-11-02）
+
+`RuntimeSyntaxBoundaryTest` 在 PRESERVE、ES6、ES2021 三目标下，通过独立 Acorn 语法检查与 Node 执行验证以下行为：
+
+- `super()` 成功后先初始化实例字段，再赋值参数属性；保留表达式结果、异常重试、重复调用的原生错误，以及不调用 `super()` 而直接返回对象的路径。
+- 参数属性在构造函数作用域捕获，分支块和箭头参数的同名绑定不会改变赋值来源；嵌套类的构造函数拥有独立的 `super`，其 heritage 和计算属性名仍属于外层词法环境。
+- 计算枚举按声明顺序运行，支持带类型的回调、嵌套类/枚举、Unicode 成员名及同作用域的合并声明。仅数字值生成反向映射；字符串或未知计算值之后的隐式递增仍会诊断失败。
+- 剩余拒绝边界：参数属性与参数默认值中的 `super()` 组合、跨控制流参数属性与动态作用域组合、枚举初始化的直接 `eval`/`with` 或外层 `await`/`yield`。
+
+P0 冻结输入和参考实现保持不变。`ReferenceCompatibilityTest` 对原先拒绝的计算枚举及分支构造输入保留旧参考断言，并对当前输出独立验证语法和运行结果。P8 的 `reject-enum` 与 `reject-derived` 固定输入更新为仍不支持的边界，避免继续把新增能力列为拒绝契约。

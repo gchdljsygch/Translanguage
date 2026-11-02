@@ -254,7 +254,7 @@ class JavaScriptTargetTest {
     @ParameterizedTest(name = "JT-012/{0}") @EnumSource(value = JavaScriptTarget.class, names = {"ES6", "ES2021"})
     void topLevelAwaitAndUnsafeDerivedInitializationFailExplicitly(JavaScriptTarget target) {
         for (String source : List.of("console.log(await Promise.resolve(1));",
-                "class B {} class C extends B { value = 1; constructor(flag) { if (flag) super(); else super(); } }")) {
+                "class B {} class C extends B { value = 1; constructor() { eval('x'); super(); } }")) {
             TranspileResult result = CompilationEvidence.compiler(target).transpile("bad.ts", source);
             assertFalse(result.successful());
             assertEquals("", result.javaScript());

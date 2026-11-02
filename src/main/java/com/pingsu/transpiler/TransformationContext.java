@@ -59,4 +59,6 @@ public final class TransformationContext {
     public List<Diagnostic> diagnostics() { return List.copyOf(diagnostics); }
 
     String render() { return edits.render(); }
+    String render(SourceRange range) { return edits.render(range); }
+    void reportDiagnostics(List<Diagnostic> errors) { diagnostics.addAll(errors); }
 }
