@@ -15,9 +15,9 @@
 
 ## 环境要求与引入方式
 
-- **运行环境**：JDK 17 或更高版本
+- **运行环境**：默认主 JAR 为 JDK 17+；显式选择 `java8` 副 JAR 可用于 JDK 8+。构建工具仍运行于 JDK 17/25。
 - **模块名**：`com.pingsu.transpiler`（`Automatic-Module-Name`）
-- **Maven 坐标**：`com.pingsu:Translanguage:2.0.0`
+- **Maven 坐标**：`com.pingsu:Translanguage:2.0.3-SNAPSHOT`（后续开发版本，尚未发布）
 
 ### 1. 发布到本地仓库并引入
 
@@ -37,7 +37,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'com.pingsu:Translanguage:2.0.0'
+    implementation 'com.pingsu:Translanguage:2.0.3-SNAPSHOT'
 }
 ```
 
@@ -51,13 +51,27 @@ repositories {
 }
 
 dependencies {
-    implementation 'com.pingsu:Translanguage:2.0.0'
+    implementation 'com.pingsu:Translanguage:2.0.3-SNAPSHOT'
 }
 ```
 
-也可以直接执行 `.\gradlew.bat jar`，将生成的 `build/libs/Translanguage-2.0.0.jar` 加入消费方类路径（无任何传递依赖）。
+也可以直接执行 `.\gradlew.bat jar`，将生成的 `build/libs/Translanguage-2.0.3-SNAPSHOT.jar` 加入消费方类路径（无任何传递依赖）。
 
 ---
+
+## 可选 Java 8 副制品
+
+主 JAR 保留 Java 17 字节码与 record API。执行 `.\gradlew.bat java8Jar` 可独立生成完整、零运行依赖的 `-java8.jar`；执行 `.\gradlew.bat build -PwithJava8=true` 会同时构建并验证两种制品与各自源码/文档。
+
+Maven 消费方显式指定 `<classifier>java8</classifier>`。Gradle 消费方使用：
+
+```groovy
+implementation('com.pingsu:Translanguage:2.0.3-SNAPSHOT') {
+    capabilities { requireCapability('com.pingsu:Translanguage-java8') }
+}
+```
+
+副版本的 record 改为具有相同组件访问器的不可变 final 类。请针对选定制品编译，确保 classpath 中只出现其中一个。默认发布不带副制品，发布者需显式开启 `-PwithJava8=true`。版本选择、JDK 8 编译样例、同步维护与完整验收见 [Java 8 支持](docs/JAVA8_SUPPORT.md)。
 
 ## 快速开始
 

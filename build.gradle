@@ -7,7 +7,7 @@ plugins {
 // Translanguage is a library-only project: other programs embed it as a dependency.
 // It deliberately has no application plugin, main class, run task, or distribution.
 group = 'com.pingsu'
-version = '2.0.2'
+version = '2.0.3-SNAPSHOT'
 description = 'TypeScript to JavaScript transpiler library (library only; no CLI or standalone tool).'
 
 repositories { mavenCentral() }
@@ -47,7 +47,7 @@ tasks.withType(JavaCompile).configureEach {
     // Identical release bytecode under both build JVMs; tests still run on the selected build JDK.
     javaCompiler = javaToolchains.compilerFor { languageVersion = JavaLanguageVersion.of(17) }
     options.encoding = 'UTF-8'
-    options.release = 17
+    options.release.convention(17)
 }
 
 tasks.withType(Javadoc).configureEach {
@@ -93,7 +93,7 @@ publishing {
     repositories {
         maven {
             name = 'buildRepo'
-            url = layout.buildDirectory.dir('repo')
+            url = providers.gradleProperty('verificationRepository').map { uri(it) }.getOrElse(layout.buildDirectory.dir('repo').get().asFile.toURI())
         }
     }
 }
@@ -112,3 +112,5 @@ tasks.named('processTestResources') {
 }
 
 apply from: 'gradle/release-verification.gradle'
+
+apply from: 'gradle/java8.gradle'
