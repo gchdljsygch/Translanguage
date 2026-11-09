@@ -73,7 +73,7 @@ class ImportElisionTest {
             new Case("literal text is not a reference", "import {X} from 'missing'; console.log('import(X)',`X`);", "import(X) X")
         );
         List<DynamicTest> tests = new ArrayList<>();
-        for (Case test : cases) for (JavaScriptTarget target : JavaScriptTarget.values()) {
+        for (Case test : cases) for (JavaScriptTarget target : List.of(JavaScriptTarget.PRESERVE, JavaScriptTarget.ES6, JavaScriptTarget.ES2021)) {
             tests.add(DynamicTest.dynamicTest(test.name + "/" + target, () -> {
                 Files.writeString(temporary.resolve("dep.mjs"), "export default 7;export const X=7,key='x';export class Base {constructor(){this.value=7;}}", StandardCharsets.UTF_8);
                 Files.writeString(temporary.resolve("named.mjs"), "export const X=7;", StandardCharsets.UTF_8);
@@ -112,7 +112,7 @@ class ImportElisionTest {
         Files.writeString(temporary.resolve("first.mjs"), "globalThis.events=['first'];", StandardCharsets.UTF_8);
         Files.writeString(temporary.resolve("live.mjs"), "globalThis.events.push('live');export let value=1;export function change(){value=2;}", StandardCharsets.UTF_8);
         Files.writeString(temporary.resolve("last.mjs"), "globalThis.events.push('last');", StandardCharsets.UTF_8);
-        for (JavaScriptTarget target : JavaScriptTarget.values()) {
+        for (JavaScriptTarget target : List.of(JavaScriptTarget.PRESERVE, JavaScriptTarget.ES6, JavaScriptTarget.ES2021)) {
             String output = compile(target, "import './first.mjs';import {Missing,value,change} from './live.mjs';import * as Unused from 'missing';import './last.mjs';export {value as current,change};");
             Files.writeString(temporary.resolve("bridge.mjs"), output, StandardCharsets.UTF_8);
             assertEquals("first,live,last 1\n2", new JavaScriptRuntime(temporary).run(

@@ -7,5 +7,7 @@ public enum JavaScriptTarget {
     /** ECMAScript 2015 (also known as ES6), retaining ES modules. */
     ES6,
     /** ECMAScript 2021, retaining ES modules. */
-    ES2021
+    ES2021,
+    /** ECMAScript 5 script syntax; ES modules and generators are diagnosed. */
+    ES5
 }

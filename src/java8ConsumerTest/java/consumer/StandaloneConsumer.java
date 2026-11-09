@@ -56,6 +56,11 @@ public final class StandaloneConsumer {
                 require(extensionResult.successful(),extensionResult.diagnostics().toString());
 
             }
+            if(target==JavaScriptTarget.ES5) {
+                require(compiler.transpile("es5.ts","const fs=[];for(let i=0;i<3;i++)fs.push(()=>i);class Box{value=4;}console.log(fs[0](),new Box().value);").successful(),"ES5 synchronous lowering");
+                require(!compiler.transpile("module.ts","export const value=1;").successful(),"ES5 modules must be diagnosed");
+                require(!compiler.transpile("async.ts","async function f(){await 1;}").successful(),"ES5 async must be diagnosed");
+            }
             System.out.println("target=" + target + " ok");
         }
         com.pingsu.transpiler.TypeScriptTranspiler preserve = new TypeScriptTranspiler();

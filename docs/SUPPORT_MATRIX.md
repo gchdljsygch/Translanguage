@@ -142,3 +142,18 @@ P0 冻结输入和参考实现保持不变。`ReferenceCompatibilityTest` 对原
 `ImportElisionTest` 使用独立 Acorn 和 Node 验证不存在的类型模块不被加载、不存在的未使用导出不被链接，以及局部遮蔽、参数默认值、计算名称、简写属性、值导出、枚举、Unicode 标识符和副作用顺序；另验证直接 eval 的保守保留、原文保持、自定义 pass 与并发隔离。普通远程重导出继续保留，不查询外部类型信息。
 
 旧参考后端和 P0 冻结产物不修改；新增行为以独立运行验证及更新后的当前契约断言为准。
+
+## ES5 脚本目标
+
+`JavaScriptTarget.ES5` 使用自有后端，并由 `Es5TargetTest` 独立覆盖；原模块/异步目标测试继续明确使用 `PRESERVE`、`ES6`、`ES2021`，不会将 ES 模块误作为 ES5 脚本验收。详见 [ES5 支持](ES5_SUPPORT.md)。
+
+| 能力 | 回归测试 |
+| --- | --- |
+| API、类型擦除、独立 Acorn ES5 语法验收 | `erasesTypesAndExposesTargetThroughPublicApi` |
+| TDZ、const、块级遮蔽、循环闭包 | `lexicalBindingsKeepShadowingTdzAndConstWrites`、`loopClosuresKeepPerIterationEnvironmentsAndControlFlow` |
+| 箭头、参数与接收者 | `arrowsCaptureThisAndArgumentsAcrossNestedFunctions`、`directivesDetachedCallsAndParameterArgumentsStayCorrect` |
+| 模板、字面量、对象、展开、绑定解构 | `templatesUnicodeAndNumericLiteralsAreEs5`、`objectMethodsComputedPropertiesAndSpreadPreserveOrder`、`spreadCallsKeepReceiversAndSparseArrays`、`destructuringDefaultsRestAndComputedKeysEvaluateOnce` |
+| 迭代、提前关闭、计算属性 | `forOfClosesIteratorsOnBreakAndCapturesBindings`、`boundedDestructuringClosesIteratorWithoutExhaustingIt`、`lexicalForOfHeaderKeepsTdzAndComputedRestCoercesKeysOnce` |
+| 类、字段、继承 | `classesFieldsMethodsAndSimpleInheritance`、`derivedFieldsAndReturnValuesPreserveInitialization`、`fieldArrowsNativeInheritanceAndEs5OnlyBuiltins` |
+| 后续版本表达式与可组合降级 | `laterExpressionsLowerAndPreserveShortCircuiting`、`optionalSpreadAndCommentsComposeWithLowering` |
+| 诊断、产物复核、并发隔离 | `unsupportedFeaturesProduceLocatedDiagnosticsAndNoPartialOutput`、`validatorRejectsResidualModernSyntax`、`sharedCompilerHasIsolatedConcurrentSessions` |

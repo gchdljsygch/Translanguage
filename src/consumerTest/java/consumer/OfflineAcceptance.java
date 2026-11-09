@@ -33,7 +33,7 @@ public final class OfflineAcceptance {
                 async function run(){let n=null;n??=count**2;for await(const v of values()){console.log(n,v,b?.value??0);break}}
                 run();
                 """;
-        for(JavaScriptTarget target:JavaScriptTarget.values()) {
+        for(JavaScriptTarget target:new JavaScriptTarget[]{JavaScriptTarget.PRESERVE, JavaScriptTarget.ES6, JavaScriptTarget.ES2021}) {
             var result=new TypeScriptTranspiler(target).transpile("隔离 消费.ts",source);
             if(!result.successful())throw new AssertionError(result.diagnostics());
             emit(target.name(),result.javaScript());

@@ -35,7 +35,7 @@ public final class PerformanceAcceptance {
             String ts=source(SIZES[size]);var erased=new TypeScriptTranspiler().transpile("performance.ts",ts);
             if(!erased.successful())throw new AssertionError(erased.diagnostics());
             String hash=HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(ts.getBytes(StandardCharsets.UTF_8)));
-            for(String phase:List.of("frontend","backend","pipeline")) for(JavaScriptTarget target:JavaScriptTarget.values()) {
+            for(String phase:List.of("frontend","backend","pipeline")) for(JavaScriptTarget target:new JavaScriptTarget[]{JavaScriptTarget.PRESERVE, JavaScriptTarget.ES6, JavaScriptTarget.ES2021}) {
                 if(phase.equals("frontend")&&target!=JavaScriptTarget.PRESERVE)continue;
                 for(int i=0;i<WARMUP;i++)run(phase,target,ts,erased.javaScript());
                 ManagementFactory.getMemoryPoolMXBeans().forEach(pool->pool.resetPeakUsage());

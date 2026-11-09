@@ -9,9 +9,13 @@ import java.util.*;
 
 /** ES2015 lowering, with references captured once and temporaries local to each invocation. */
 public final class RegularLowering implements LoweringPass {
-    @Override public String lower(JsProgram program) { return new Printer(program).print(); }
+    private final boolean es5;
+    public RegularLowering() { this(false); }
+    public RegularLowering(boolean es5) { this.es5 = es5; }
+    @Override public String lower(JsProgram program) { return new Printer(program, es5).print(); }
     private static final class Printer extends ScopedJavaScriptPrinter {
-        Printer(JsProgram program) { super(program); }
+        private final String apply;
+        Printer(JsProgram program, boolean es5) { super(program); apply = es5 ? "Function.prototype.apply.call(" : "Reflect.apply("; }
         private String temp() { return temporary(); }
         @Override protected String render(JsNode node) {
             if (node.is("exportDeclaration") && !node.attribute("namespaceExport").isEmpty()) {
@@ -29,13 +33,13 @@ public final class RegularLowering implements LoweringPass {
             if (node.is("unaryExpression") && node.attribute("operator").equals("delete") && chainHasOptional(unwrap(node.child(0)))) return chain(unwrap(node.child(0)), true);
             if(node.is("taggedTemplateExpression")&&chainHasOptional(unwrap(node.child(0)))) {
                 String receiver=temp();
-                return "Reflect.apply(Function.prototype.bind,"+chain(unwrap(node.child(0)),false,receiver)+",["+receiver+"])"+render(node.child(1));
+                return apply + "Function.prototype.bind,"+chain(unwrap(node.child(0)),false,receiver)+",["+receiver+"])"+render(node.child(1));
             }
             if (node.is("argumentsExpression") && node.child(0).is("parenthesizedExpression")) {
                 JsNode inner = unwrap(node.child(0));
                 if (chainHasOptional(inner)) {
                     String receiver = temp(), args = render(node.child(1));
-                    return "Reflect.apply(" + chain(inner,false,receiver) + "," + receiver + ",[" + args.substring(1,args.length()-1) + "])";
+                    return apply + chain(inner,false,receiver) + "," + receiver + ",[" + args.substring(1,args.length()-1) + "])";
                 }
             }
             if (chainHasOptional(node)) return chain(node, false);
@@ -101,7 +105,7 @@ public final class RegularLowering implements LoweringPass {
             if (part.is("arguments")) {
                 String arguments = render(part); String call;
                 if (optional) {
-                    String method = temp(); call = "Reflect.apply(" + method + "," + receiver + ",[" + arguments.substring(1, arguments.length()-1) + "])";
+                    String method = temp(); call = apply + method + "," + receiver + ",[" + arguments.substring(1, arguments.length()-1) + "])";
                     return method + "=" + value + "," + nullish(method) + "?" + (deleting ? "true" : "void 0") + ":(" + chainStep(steps, index+1, call, "void 0", deleting,capture) + ")";
                 }
                 call = value + arguments;

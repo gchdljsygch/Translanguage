@@ -8,7 +8,7 @@
 
 - **零第三方依赖**：编译与运行仅需 **JDK 17+** 标准库（`java.base`）与单个主 JAR，无需 Node.js、`tsc`、ANTLR 或 Closure Compiler。
 - **纯内存字符串转换**：接收 `(sourceName, source)` 字符串，返回生成的 JavaScript 文本与结构化诊断信息，不触碰文件系统或外部进程。
-- **多目标语法输出**：支持保留原运行时语法（`PRESERVE`），或按目标环境降级输出为 `ES2021` / `ES6`（含 `async`/`await`、异步生成器与公开类字段降级）。
+- **多目标语法输出**：支持保留原运行时语法（`PRESERVE`），或按目标环境降级输出为 `ES2021` / `ES6`，或降级常用同步语法为 `ES5`（ES6 含 `async`/`await`、异步生成器与公开类字段降级）。
 - **并发安全与可扩展**：`Transpiler` 实例可跨线程安全复用；内置不可变语法树（AST）与源码区间编辑接口，支持注入自定义 `TransformationPass` 与 `JavaScriptEmitter`。
 
 ---
@@ -110,7 +110,7 @@ public class Example {
 }
 ```
 
-### 指定 ECMAScript 目标版本（`ES6` / `ES2021`）
+### 指定 ECMAScript 目标版本（`ES5` / `ES6` / `ES2021`）
 
 当运行环境对 ECMAScript 语法版本有限制时，可在构造 `TypeScriptTranspiler` 时指定 `JavaScriptTarget`：
 
@@ -120,6 +120,7 @@ import com.pingsu.transpiler.TranspileResult;
 import com.pingsu.transpiler.Transpiler;
 import com.pingsu.transpiler.TypeScriptTranspiler;
 
+Transpiler es5Transpiler = new TypeScriptTranspiler(JavaScriptTarget.ES5);
 Transpiler es6Transpiler = new TypeScriptTranspiler(JavaScriptTarget.ES6);
 Transpiler es2021Transpiler = new TypeScriptTranspiler(JavaScriptTarget.ES2021);
 
@@ -148,6 +149,7 @@ if (result.successful()) {
 | --- | --- | --- |
 | `JavaScriptTarget.PRESERVE`（默认） | 擦除 TS 类型、省略无运行时引用的导入并转换枚举/参数属性；保留其余运行时 JS 语法与未修改区域的空白、换行和注释。 | 后续接入现代打包器/运行时，或希望尽量保留原始代码排版。 |
 | `JavaScriptTarget.ES2021` | 重新打印代码，确保语法不超过 ECMAScript 2021；原生保留 `async`/`await`、可选链、空值合并、BigInt、动态 `import()` 和 `import.meta`，同时降级公开类字段并移除数字分隔符。 | 现代浏览器或 Node.js 环境，需兼容尚未支持 ES2022 类字段的引擎。 |
+| `JavaScriptTarget.ES5` | 输出 ES5 **script** 语法；降级块级绑定、箭头函数、默认/剩余参数、类及公开字段、绑定解构、模板字符串、计算属性、展开、`for...of` 和可选链等表达式。ES 模块、异步/生成器等超出当前支持范围的输入返回 `JS_TARGET`。 | 需要 ES5 语法的同步脚本；详细支持范围和运行时要求见 [ES5 支持](docs/ES5_SUPPORT.md)。 |
 | `JavaScriptTarget.ES6` | 重新打印代码，确保语法不超过 ECMAScript 2015（ES6）；自动降级 `async`/`await`、异步生成器、`for await...of`、可选链 `?.`、空值合并 `??`、逻辑赋值、幂运算 `**`、对象展开/剩余、可选 `catch` 绑定、数字分隔符、`export * as ns` 以及公开类字段。 | 仅支持 ES6 语法的运行时环境。 |
 
 ### 显式目标（`ES6` / `ES2021`）行为说明
@@ -158,6 +160,18 @@ if (result.successful()) {
 - **类字段语义**：实例和静态公开类字段通过 `Object.defineProperty` 降级，保留自有属性语义（含无初始值字段）；构造函数参数属性保持 `this.prop = prop;` 赋值语义。
 - **仅降级语法，不注入业务 Polyfill**：目标版本约束的是**语法**，不会为业务代码自动注入 `Promise.any`、`Array.prototype.includes` 等标准库 API 的 polyfill。运行 `ES6` 降级产物需要宿主具备 ES6 标准内置对象（`Promise`、`Symbol`、`Reflect`、`Proxy`、`WeakMap`）。
 - **语法复核**：显式目标在生成代码后会重新解析并校验最终 AST，确保不会将残留高版本语法的产物标记为成功。
+
+---
+
+### ES5 脚本目标
+
+```java
+Transpiler transpiler = new TypeScriptTranspiler(JavaScriptTarget.ES5);
+TranspileResult result = transpiler.transpile("greet.ts",
+        "const greet = (name: string) => `Hello ${name}`; console.log(greet('ES5'));");
+```
+
+ES5 产物经过重新解析及目标校验，主 JAR 和 Java 8 副 JAR 提供相同能力。ES5 不保留 ES 模块；包括类型导入擦除后为维持模块身份生成的 `export {};`，都会返回诊断。完整边界见 [ES5 支持](docs/ES5_SUPPORT.md)。
 
 ---
 
@@ -177,7 +191,7 @@ if (result.successful()) {
 - `TS_LEXER`：词法错误（如未闭合的字符串、模板或非法字符）。
 - `TS_SYNTAX`：TypeScript / JavaScript 语法错误，或超出解析深度（128 层）与工作预算限制。
 - `TS_UNSUPPORTED`：已知不支持的 TypeScript 运行时特性（见下方[支持边界](#支持边界与已知限制)）。
-- `JS_TARGET`：显式目标（`ES6` / `ES2021`）不支持的语法特性（如 `ES6` 下的 BigInt、动态 `import()`、`import.meta`、高版本正则特性，或顶层 `await`）。`JS_TARGET` 的行列坐标基于类型擦除后的中间 JavaScript。
+- `JS_TARGET`：显式目标（`ES5` / `ES6` / `ES2021`）不支持的语法特性（如 `ES6` 下的 BigInt、动态 `import()`、`import.meta`、高版本正则特性，或顶层 `await`）。`JS_TARGET` 的行列坐标基于类型擦除后的中间 JavaScript。
 
 ---
 
@@ -288,6 +302,7 @@ Translanguage 是一个专注于单文件语法转换的库，**不是**完整�
 
 - [2.0 扩展 API 迁移说明](docs/API_MIGRATION.md)：1.x 到 2.0 的扩展接口变更对照表与 AST 编辑契约。
 - [支持矩阵与用例台账](docs/SUPPORT_MATRIX.md)：全部受支持的转换特性与回归测试用例映射。
+- [ES5 支持](docs/ES5_SUPPORT.md)：ES5 脚本目标、转换语义、运行时要求与诊断边界。
 - [异步降级设计说明](docs/ASYNC_LOWERING.md)：`ES6` 下 `async`/`await`、异步生成器与 `for await...of` 的降级模型与边界。
 - [发行验收说明](docs/RELEASE_ACCEPTANCE.md)：源码构建、离线验证与性能预算测试指南。
 - [第三方声明](THIRD_PARTY_NOTICES.md)：测试参考语法来源与许可说明。

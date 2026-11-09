@@ -18,7 +18,7 @@ class RuntimeSyntaxBoundaryTest {
         assertEquals(expected, runtime.run(result.javaScript()), result.javaScript());
     }
 
-    @ParameterizedTest @EnumSource(JavaScriptTarget.class)
+    @ParameterizedTest @EnumSource(value = JavaScriptTarget.class, names = {"PRESERVE", "ES6", "ES2021"})
     void branchesArrowsAndReturnsInitializeBeforeTheContainingExpression(JavaScriptTarget target) throws Exception {
         runs(target, """
                 const log:string[]=[];
@@ -42,7 +42,7 @@ class RuntimeSyntaxBoundaryTest {
                 """, "base,field,set:7,branch:90,body,base,field,set:8,true,body,before,base,field,set:9 1 2");
     }
 
-    @ParameterizedTest @EnumSource(JavaScriptTarget.class)
+    @ParameterizedTest @EnumSource(value = JavaScriptTarget.class, names = {"PRESERVE", "ES6", "ES2021"})
     void simpleFieldsSupportLoopsSwitchShortCircuitAndArrowDefaults(JavaScriptTarget target) throws Exception {
         runs(target, """
                 class B {}
@@ -61,7 +61,7 @@ class RuntimeSyntaxBoundaryTest {
                 """, "3,3,3,3");
     }
 
-    @ParameterizedTest @EnumSource(JavaScriptTarget.class)
+    @ParameterizedTest @EnumSource(value = JavaScriptTarget.class, names = {"PRESERVE", "ES6", "ES2021"})
     void throwingAndRepeatedSuperAndObjectReturnsRetainNativeBehavior(JavaScriptTarget target) throws Exception {
         runs(target, """
                 const log=[];let fail=true;
@@ -79,7 +79,7 @@ class RuntimeSyntaxBoundaryTest {
                 """, "true\nbase,caught,base,field,5,true,base,field,base,true,6,true");
     }
 
-    @ParameterizedTest @EnumSource(JavaScriptTarget.class)
+    @ParameterizedTest @EnumSource(value = JavaScriptTarget.class, names = {"PRESERVE", "ES6", "ES2021"})
     void nestedClassesKeepSeparateSuperBindingsAndInitializeInParameterDefaults(JavaScriptTarget target) throws Exception {
         runs(target, """
                 const log=[];const outer=10;
@@ -97,7 +97,7 @@ class RuntimeSyntaxBoundaryTest {
                 """, "10 7 30 10 inner,20,outer,true,true");
     }
 
-    @ParameterizedTest @EnumSource(JavaScriptTarget.class)
+    @ParameterizedTest @EnumSource(value = JavaScriptTarget.class, names = {"PRESERVE", "ES6", "ES2021"})
     void computedEnumsEvaluateOnceInOrderWithReferencesAndNumericReverseMappings(JavaScriptTarget target) throws Exception {
         runs(target, """
                 let calls=0;const events=[];
@@ -115,7 +115,7 @@ class RuntimeSyntaxBoundaryTest {
                 """, "4 5 7 8 9 10 Dynamic Later prefix prefix runtime undefined undefined 20 21 4 9,10,20,21");
     }
 
-    @ParameterizedTest @EnumSource(JavaScriptTarget.class)
+    @ParameterizedTest @EnumSource(value = JavaScriptTarget.class, names = {"PRESERVE", "ES6", "ES2021"})
     void enumReferencesRespectBindingsPropertyNamesAndLexicalContext(JavaScriptTarget target) throws Exception {
         runs(target, """
                 const A=100;
@@ -141,7 +141,7 @@ class RuntimeSyntaxBoundaryTest {
                 """, "100 6 7 undefined 2 2 11 12 2 2 9 3");
     }
 
-    @ParameterizedTest @EnumSource(JavaScriptTarget.class)
+    @ParameterizedTest @EnumSource(value = JavaScriptTarget.class, names = {"PRESERVE", "ES6", "ES2021"})
     void enumEscapesMergedDeclarationsAndFailuresRemainSequential(JavaScriptTarget target) throws Exception {
         runs(target, """
                 enum E {'\\x41'=1, B=A+1, '\\u{43}'=B+1, D=C+1}
@@ -154,7 +154,7 @@ class RuntimeSyntaxBoundaryTest {
                 """, "stop 1\n1 2 3 4 6 7 8");
     }
 
-    @ParameterizedTest @EnumSource(JavaScriptTarget.class)
+    @ParameterizedTest @EnumSource(value = JavaScriptTarget.class, names = {"PRESERVE", "ES6", "ES2021"})
     void lexicalSuperInNestedClassKeysAndHeritageBelongsToTheOuterConstructor(JavaScriptTarget target) throws Exception {
         runs(target, """
                 class B {}
@@ -172,7 +172,7 @@ class RuntimeSyntaxBoundaryTest {
                 """, "1 5 true 3 6 4");
     }
 
-    @ParameterizedTest @EnumSource(JavaScriptTarget.class)
+    @ParameterizedTest @EnumSource(value = JavaScriptTarget.class, names = {"PRESERVE", "ES6", "ES2021"})
     void computedEnumInitializersComposeWithClassesAndAvoidGeneratedNameCapture(JavaScriptTarget target) throws Exception {
         runs(target, """
                 const $tl$enum$0=100;class Base {}
@@ -193,7 +193,7 @@ class RuntimeSyntaxBoundaryTest {
                 """, "7 101 9 1 8 8");
     }
 
-    @ParameterizedTest @EnumSource(JavaScriptTarget.class)
+    @ParameterizedTest @EnumSource(value = JavaScriptTarget.class, names = {"PRESERVE", "ES6", "ES2021"})
     void unsupportedBoundariesReturnDiagnosticsWithoutPartialOutput(JavaScriptTarget target) {
         for (String source : List.of("enum E {A=read(),B}", "enum E {A='x',B}",
                 "enum E {A=eval('1')}", "enum E {A=await read()}", "class C extends B {constructor(public x=1,y=super()){}}")) {

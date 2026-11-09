@@ -11,7 +11,7 @@ final class JavaScriptRuntime {
     private final Path directory;
     JavaScriptRuntime(Path directory) { this.directory = directory; }
     void syntax(JavaScriptTarget target, String source) throws Exception {
-        syntax(target == JavaScriptTarget.ES6 ? 2015 : 2021, "module", source);
+        syntax(target == JavaScriptTarget.ES5 ? 5 : target == JavaScriptTarget.ES6 ? 2015 : 2021, target == JavaScriptTarget.ES5 ? "script" : "module", source);
     }
     void syntax(int version, String mode, String source) throws Exception {
         Path acorn = directory.resolve("acorn.mjs");

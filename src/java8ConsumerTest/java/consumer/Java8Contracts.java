@@ -42,14 +42,14 @@ public final class Java8Contracts {
         try{new SourceLexer("other","").restore(mark);throw new AssertionError("foreign checkpoint");}catch(IllegalArgumentException expectedFailure){}
         for(JavaScriptTarget target:JavaScriptTarget.values()) {
             TypeScriptTranspiler compiler=new TypeScriptTranspiler(target);
-            String source="import {Unused} from './missing.js'; enum E{A,B=3} class C{value=E.B;async m(){return await this.value}} const {value,...rest}=new C();";
+            String source=target==JavaScriptTarget.ES5 ? "enum E{A,B=3} class C{value=E.B;m(){return this.value}} const {value,...rest}=new C();" : "import {Unused} from './missing.js'; enum E{A,B=3} class C{value=E.B;async m(){return await this.value}} const {value,...rest}=new C();";
             TranspileResult baseline=compiler.transpile("concurrent.ts",source);require(baseline.successful(),baseline.diagnostics().toString());
             require(!baseline.javaScript().contains("missing.js"),"unused import not erased");
             ExecutorService pool=Executors.newFixedThreadPool(4);
             try { List<Callable<TranspileResult>> jobs=new ArrayList<>();for(int i=0;i<48;i++)jobs.add(()->compiler.transpile("concurrent.ts",source));for(Future<TranspileResult> result:pool.invokeAll(jobs))require(baseline.equals(result.get()),"concurrent compiler state leaked"); }
             finally {pool.shutdownNow();}
             // Unicode 13 identifier introduced after the Unicode baseline of Java 8.
-            require(compiler.transpile("unicode.ts","const \u1C90 = 1; const \uD801\uDC00 = \u1C90;").successful(),"pinned Unicode identifier");
+            require(compiler.transpile("unicode.ts","const \u1C90 = 1; const \uD801\uDC00 = \u1C90;").successful()==(target!=JavaScriptTarget.ES5),"pinned Unicode identifier / ES5 BMP boundary");
             require(!compiler.transpile("surrogate.ts","const \uD800 = 1;").successful(),"unpaired surrogate accepted");
         }
         int count=0;

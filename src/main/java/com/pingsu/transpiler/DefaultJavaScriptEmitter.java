@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * Self-contained ES2021 and ES6 emission, including asynchronous control flow.
+ * Self-contained ES2021, ES6 and ES5 emission, including asynchronous control flow.
  * The complete compilation path requires only java.base.
  * Instances are immutable and safe to share between compilation sessions.
  */
@@ -25,11 +25,12 @@ public final class DefaultJavaScriptEmitter implements JavaScriptEmitter {
                 JsProgram input = JsProgram.parse(sourceName, source);
                 transition(State.CREATED, State.PARSED);
                 var validator = new SyntaxTargetValidator(); validator.validateInput(input, target);
-                String fields = new ClassFieldsLowering().lower(input);
+                String fields = target == JavaScriptTarget.ES5 ? input.source() : new ClassFieldsLowering().lower(input);
                 JsProgram fieldOutput = JsProgram.parse(sourceName, fields);
                 if (target == JavaScriptTarget.ES6) fieldOutput = JsProgram.parse(sourceName, new AsyncLowering().lower(fieldOutput));
                 if (target == JavaScriptTarget.ES6) fieldOutput = JsProgram.parse(sourceName, new ObjectRestLowering().lower(fieldOutput));
-                String result = target == JavaScriptTarget.ES6 ? new RegularLowering().lower(fieldOutput)
+                String result = target == JavaScriptTarget.ES5 ? new Es5Lowering().lower(fieldOutput)
+                        : target == JavaScriptTarget.ES6 ? new RegularLowering().lower(fieldOutput)
                         : new JavaScriptPrinter(fieldOutput) {
                             @Override protected String render(JsNode node) {
                                 if (node.is("numericLiteral") || node.is("bigintLiteral")) return text(node).replace("_", "");
