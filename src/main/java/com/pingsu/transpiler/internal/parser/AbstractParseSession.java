@@ -72,6 +72,7 @@ abstract class AbstractParseSession {
     final State state() { return state; }
     final boolean module() { return grammar.module; }
     final Language language() { return language; }
+    final boolean jsx() { return language == Language.TYPESCRIPT && (name.toLowerCase(java.util.Locale.ROOT).endsWith(".tsx") || name.toLowerCase(java.util.Locale.ROOT).endsWith(".jsx")); }
     final Token last() { return last; }
     final int depth() { return depth; }
 
@@ -88,7 +89,7 @@ abstract class AbstractParseSession {
 
     final Token peek(TokenReader.Goal goal) {
         if (++work > budget) throw limitFailure(last, "Parser work limit exceeded");
-        if (look != null && beforeLook != null && lookGoal != goal && look.text().startsWith("/")) {
+        if (look != null && beforeLook != null && lookGoal != goal && (look.text().startsWith("/") || lookGoal == TokenReader.Goal.JSX_TAG || lookGoal == TokenReader.Goal.JSX_TEXT || goal == TokenReader.Goal.JSX_TAG || goal == TokenReader.Goal.JSX_TEXT)) {
             lexer.restore(beforeLook); tokens.subList(lookTokenCount, tokens.size()).clear(); look = null;
         }
         if (look == null) {

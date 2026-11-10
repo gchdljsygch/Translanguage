@@ -143,6 +143,31 @@ if (result.successful()) {
 
 ---
 
+## TSX / JSX 与装饰器
+
+以 ".tsx" 或 ".jsx" 结尾的 `sourceName` 启用 JSX 解析（后缀不区分大小写）。默认将 JSX 转为 `React.createElement`，片段使用 `React.Fragment`；支持组件、成员组件、自定义元素、嵌套片段、表达式、属性/子元素展开、实体解码和 TSX 类型参数。工厂及组件作为运行时引用参与 import elision。普通 `.ts` 仍支持 `<T>value` 类型断言，TSX 泛型箭头应写为 `<T,>(x: T) => x`。
+
+默认支持现代装饰器的 `(value, context)` 协议，包括类、方法、getter/setter、公开字段、替换返回值、`addInitializer`、`context.access`，以及宿主定义 `Symbol.metadata` 时的共享元数据。legacy TypeScript 装饰器必须显式选择：
+
+~~~java
+Transpiler transpiler = new TypeScriptTranspiler(
+        JavaScriptTarget.ES2021, DecoratorMode.LEGACY);
+TranspileResult result = transpiler.transpile("component.tsx", source);
+~~~
+
+LEGACY 支持类、属性、方法、访问器和参数装饰器，包括构造函数参数属性；按 TS 的求值与反向应用顺序执行。两种模式均转换为普通 JavaScript，并接入 PRESERVE / ES5 / ES6 / ES2021 输出。React 等业务 runtime 由调用方提供，生成代码不自动导入它们。
+
+自定义 JSX 工厂时，将 JSX pass 放在类型擦除前、装饰器 pass 放在其他语法转换后：
+
+~~~java
+Transpiler custom = new TypeScriptTranspiler(JavaScriptTarget.ES6, List.of(
+        new JsxLoweringPass("h", "Fragment"),
+        new TypeErasurePass(), new EnumLoweringPass(),
+        new DecoratorLoweringPass(DecoratorMode.STANDARD)));
+~~~
+
+自定义 pass 列表仍只执行调用方指定的阶段。装饰器 pass 会物化前序编辑并替换整个编译文本；基于原始节点区间的自定义编辑应放在它之前。完整语义、边界和测试见 [JSX 与装饰器支持](docs/JSX_DECORATORS.md)。
+
 ## 输出目标版本对比
 
 | 目标枚举 | 输出语法行为 | 适用场景 |
@@ -284,9 +309,9 @@ Translanguage 是一个专注于单文件语法转换的库，**不是**完整�
 1. **不做类型检查与跨文件分析**：仅解析并擦除类型语法，不验证类型正确性，不读取 `tsconfig.json`，不解析外部模块路径，也不生成 `.d.ts` 或 Source Map。
 2. **Import Elision 的分析边界**：只分析当前文件的语法与运行时绑定，不查询依赖模块中某个导出究竟是类型还是值。普通本地 `export { Foo }` 视为值引用；类型重导出请写 `export type { Foo }` 或 `export { type Foo }`。带 `from` 的普通重导出不按本地使用情况删除。直接 `eval(...)` 会保守保留其作用域可见的普通导入，显式类型导入仍擦除。
 3. **不支持的 TS 特性（返回 `TS_UNSUPPORTED` 或 `TS_SYNTAX`）**：
-   - JSX / TSX 语法
+   - JSX 自动 runtime（`react-jsx` / `react-jsxdev`）；当前支持经典工厂模式
    - 运行时 `namespace` / `module`（`declare namespace` 环境声明支持擦除）
-   - 装饰器（Decorators）与 `#private` 私有字段
+   - `#private` 私有字段、装饰器 auto-accessor（`accessor`）、`emitDecoratorMetadata` 类型反射元数据；现代模式不允许参数装饰器
    - `import = require(...)` 与 `export =`
    - 直接使用 `await` / `yield` 暂停枚举初始化，或在枚举初始化表达式中使用直接 `eval(...)` / `with`
    - 带参数属性的派生构造函数在参数默认值中调用 `super()`；仅实例字段初始化支持这一位置

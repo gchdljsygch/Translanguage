@@ -22,8 +22,24 @@ public final class TransformationContext {
     private final JavaScriptTarget target;
     private final SourceText source;
     private final Program program;
-    private final SourceEdits edits;
+    private SourceEdits edits;
+    private JsxLoweringPass jsxPass;
+    private DecoratorMode decoratorMode = DecoratorMode.STANDARD;
+    void jsxPass(JsxLoweringPass pass) { jsxPass = pass; }
+    JsxLoweringPass jsxPass() { return jsxPass == null ? new JsxLoweringPass() : jsxPass; }
+    void decoratorMode(DecoratorMode mode) { decoratorMode = mode; }
+    DecoratorMode decoratorMode() { return decoratorMode; }
     private final List<Diagnostic> diagnostics = new ArrayList<>();
+    private final java.util.Map<SyntaxNode, List<String>> runtimeReferences = new java.util.IdentityHashMap<>();
+    /** Records a generated value reference for scope-aware import retention. */
+    public void reference(SyntaxNode node, String name) {
+        runtimeReferences.computeIfAbsent(node, ignored -> new ArrayList<>()).add(java.util.Objects.requireNonNull(name));
+    }
+    /** Generated value references associated with an original syntax node. */
+    public List<String> references(SyntaxNode node) {
+        List<String> names = runtimeReferences.get(node);
+        return names == null ? java.util.Collections.emptyList() : java.util.Collections.unmodifiableList(names);
+    }
     TransformationContext(String sourceName, String source, Program program, JavaScriptTarget target) {
         this.sourceName = sourceName; this.target = target;
         this.source = new SourceText(source);
@@ -58,6 +74,11 @@ public final class TransformationContext {
     }
     public List<Diagnostic> diagnostics() { return List.copyOf(diagnostics); }
 
+    /** Internal phase boundary: materialize prior edits before replacing a complete compilation. */
+    void rewrite(String source) {
+        edits = new SourceEdits(this.source.text());
+        edits.replace(program.range(), source);
+    }
     String render() { return edits.render(); }
     String render(SourceRange range) { return edits.render(range); }
     void reportDiagnostics(List<Diagnostic> errors) { diagnostics.addAll(errors); }

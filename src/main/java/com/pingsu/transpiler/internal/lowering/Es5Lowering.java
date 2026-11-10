@@ -293,14 +293,20 @@ public final class Es5Lowering implements LoweringPass {
         private String superCall(JsNode n){if(home==null||!constructor)program.fail(n,"ES5 super() requires a derived constructor");String value=temporary();String init=helper("superInit","(current,value,fallback){if(current!==void 0)throw new ReferenceError('Super constructor already called');return value!==null&&(typeof value==='object'||typeof value==='function')?value:fallback;}");return "("+value+"="+construct(home.base,arguments(n.child(1)),"this.constructor","this")+","+home.instance+"="+init+"("+home.instance+","+value+",this),"+home.fields+".call("+home.instance+"),"+home.instance+")";}
         private String inferredName(JsNode n){JsNode p=parents.get(n);while(p!=null&&p.is("parenthesizedExpression")){n=p;p=parents.get(p);}if(p!=null&&(p.is("variableDeclaration")||p.is("assignmentExpression"))&&p.child(0).is("identifier"))return ScopeAnalysis.decode(text(p.child(0)));return "";}
         private String clazz(JsNode n){
-            boolean named=!n.children().isEmpty()&&n.child(0).is("identifier");String name=named?ScopeAnalysis.decode(text(n.child(0))):scopes.fresh("Class");boolean derived=n.attribute("derived").equals("true");int start=named?1:0;
+            boolean named=!n.children().isEmpty()&&!n.child(0).attribute("bindingName").isEmpty();String name=named?ScopeAnalysis.decode(text(n.child(0))):scopes.fresh("Class");boolean derived=n.attribute("derived").equals("true");int start=named?1:0;
             String base=derived?render(n.child(start++)):"null";ClassContext previous=home,current=new ClassContext(name,scopes.fresh("base"),scopes.fresh("instance"),derived);home=current;
             boolean oldConstructor=constructor;String oldReceiver=receiver;
             FunctionContext fieldContext=new FunctionContext(false,null,scopes);
             List<String> instanceFields=new ArrayList<>(),statics=new ArrayList<>(),methods=new ArrayList<>(),keys=new ArrayList<>(),keyValues=new ArrayList<>();JsNode ctor=null;
             for(int i=start;i<n.children().size();i++){
                 JsNode member=n.child(i);if(member.is("constructorDeclaration")){ctor=member;continue;}
-                if(member.is("staticBlock"))program.fail(member,"ES5 class static blocks are not supported");
+                if(member.is("staticBlock")) {
+                    current.statik=true;constructor=false;receiver=null;
+                    FunctionContext enclosing=function;function=new FunctionContext(false,null,scopes);
+                    String block=render(member.child(0));
+                    String captures=function.usesThis?"var "+function.thisName+"=this;":"";function=enclosing;
+                    statics.add("(function(){'use strict';"+captures+block+"}).call("+name+");");continue;
+                }
                 current.statik=member.attribute("static").equals("true");constructor=false;receiver=null;
                 home=previous;String property=key(member.child(0));home=current;
                 if(member.child(0).is("computedName")){String cached=scopes.fresh("key");keys.add(cached);keyValues.add(property);property=cached;}

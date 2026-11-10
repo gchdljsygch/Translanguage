@@ -57,7 +57,9 @@ final class FunctionParser implements GrammarRules.Functions {
     @Override public ParsedNode parameters(boolean constructor) {
         int start = context.start(); context.expect("("); List<SyntaxNode> children = new ArrayList<>();
         while (!context.at(")")) {
-            int begin = context.start(); List<SyntaxNode> parts = new ArrayList<>(); boolean property = false, rest = context.eat("...");
+            int begin = context.start(); List<SyntaxNode> parts = new ArrayList<>(); boolean property = false;
+            parts.addAll(DecoratorParser.parse(context, expressions, types));
+            boolean rest = context.eat("...");
             while (Compat.set("public", "private", "protected", "readonly", "override").contains(context.peek().text())) {
                 context.ts(); property = true; parts.add(context.leaf("typeModifier"));
             }
@@ -85,7 +87,7 @@ final class FunctionParser implements GrammarRules.Functions {
     @Override public List<String> parameterNames(ParsedNode parameters) {
         List<String> names = new ArrayList<>();
         parameters.walk(node -> {
-            if (Compat.set("typeAnnotation", "typeParameters", "bindingInitializer", "parameterInitializer").contains(node.kind())) return false;
+            if (Compat.set("typeAnnotation", "typeParameters", "bindingInitializer", "parameterInitializer", "decorator").contains(node.kind())) return false;
             if (node instanceof ParsedNode && !((ParsedNode) node).attribute("bindingName").isEmpty()) names.add(((ParsedNode) node).attribute("bindingName"));
             return true;
         });
@@ -127,7 +129,11 @@ final class FunctionParser implements GrammarRules.Functions {
         try {
             boolean asynchronous = context.at("async") && !context.nextText().equals("=>");
             if (asynchronous) { context.take(); if (context.newline()) return false; }
-            if (context.at("<")) types.typeParameters();
+            if (context.at("<")) {
+                ParsedNode generic = types.typeParameters();
+                String syntax = context.text(generic);
+                if (context.jsx() && !syntax.contains(",") && !syntax.contains("extends") && !syntax.contains("=")) return false;
+            }
             if (context.at("(")) parameters(false); else bindings.bindingIdentifier();
             if (context.at(":")) types.annotation();
             return !context.newline() && context.at("=>");

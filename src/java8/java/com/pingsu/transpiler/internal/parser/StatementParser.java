@@ -56,7 +56,16 @@ final class StatementParser implements GrammarRules.Statements {
             switch (context.peek().text()) {
                 case ";": return context.leaf("emptyStatement");
                 case "{": return block(false);
-                case "@": context.unsupported(context.peek(), "Decorator lowering is not supported."); break;
+                case "@": {
+                    List<SyntaxNode> decorators = DecoratorParser.parse(context, expressions, types);
+                    if (!(context.at("class") || context.at("abstract") || context.at("export"))) throw context.failure(context.peek(), "Decorators require a class declaration");
+                    ParsedNode declaration = context.at("export") ? declarations.moduleDeclaration(true) : statement();
+                    ParsedNode target = declaration;
+                    if (target.kind().equals("exportDeclaration") && target.children().size() == 1) target = (ParsedNode) target.children().get(0);
+                    if (!(target.kind().equals("classDeclaration") || target.kind().equals("classExpression") || target.kind().equals("decoratedDeclaration")))
+                        throw context.failure(context.last(), "Decorators require a class declaration");
+                    decorators.add(declaration); return context.node("decoratedDeclaration", start, decorators);
+                }
                 case "interface": context.ts(); return declarations.interfaceDeclaration();
                 case "type": if (identifierAfter()) { context.ts(); return declarations.typeAlias(); } break;
                 case "declare": if (!Compat.set("=", ";", "(", ".").contains(context.nextText())) { context.ts(); return declarations.ambient(); } break;

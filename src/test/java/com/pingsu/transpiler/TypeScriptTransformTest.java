@@ -90,7 +90,7 @@ class TypeScriptTransformTest {
         for (String source : List.of(
                 "class C {constructor(public {x}: {x:number}){}}",
                 "enum E { A=foo(), B }", "enum E {A='a', B}", "enum E { [foo()]=1 }", "enum E { 1=2 }",
-                "@decorator class C {}", "class C { #x=1 }", "namespace N {const x=1}")) {
+                "class C { #x=1 }", "namespace N {const x=1}")) {
             var result = compiler.transpile("unsupported.ts", source);
             assertFalse(result.successful(), source); assertEquals("", result.javaScript());
             assertTrue(result.diagnostics().stream().anyMatch(d -> d.code().equals("TS_UNSUPPORTED")), source + result.diagnostics());

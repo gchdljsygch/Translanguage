@@ -70,7 +70,9 @@ public final class SourceLexer implements TokenReader {
             if (!templates.isEmpty()) { templates.clear(); report(start, "Unterminated template literal"); }
             return token(TokenKind.EOF, start);
         }
-        if (!templates.isEmpty() && templates.peek().text) return templateText();
+        if (goal == Goal.JSX_TEXT) return jsxText();
+        if (goal == Goal.JSX_TAG && (at('\'') || at('"'))) return jsxString();
+        if (goal != Goal.JSX_TAG && !templates.isEmpty() && templates.peek().text) return templateText();
         int cp = text.codePointAt(offset);
         if (lineTerminator(cp)) {
             offset++;
@@ -114,6 +116,11 @@ public final class SourceLexer implements TokenReader {
                 templates.peek().braces--;
             }
         }
+        if (goal == Goal.JSX_TAG && identifierStart(cp)) {
+            offset += Character.charCount(cp);
+            while (offset < text.length() && (identifierPart(text.codePointAt(offset)) || at('-'))) offset += Character.charCount(text.codePointAt(offset));
+            return token(TokenKind.IDENTIFIER, start);
+        }
         if (identifierStart(cp) || cp == '\\') return identifier();
         if (digit(cp) || cp == '.' && offset + 1 < text.length() && digit(text.charAt(offset + 1))) return number();
         if (cp == '/' && goal == Goal.REGULAR_EXPRESSION) return regularExpression();
@@ -123,6 +130,24 @@ public final class SourceLexer implements TokenReader {
         }
         offset += Character.charCount(cp);
         return error(start, "Unexpected character U+" + Integer.toHexString(cp).toUpperCase(java.util.Locale.ROOT));
+    }
+    private Token jsxText() {
+        int start = offset;
+        if (at('<') || at('{')) {
+            if (at('{') && !templates.isEmpty()) templates.peek().braces++;
+            offset++; return token(TokenKind.PUNCTUATION, start);
+        }
+        while (offset < text.length() && !at('<') && !at('{')) {
+            if (at('}') || at('>')) { offset++; return error(start, "Escape '}' and '>' in JSX text"); }
+            offset++;
+        }
+        return token(TokenKind.STRING, start);
+    }
+    private Token jsxString() {
+        int start = offset; char quote = text.charAt(offset++);
+        while (offset < text.length() && text.charAt(offset) != quote) offset++;
+        if (offset == text.length()) return error(start, "Unterminated JSX attribute");
+        offset++; return token(TokenKind.STRING, start);
     }
     private Token templateText() {
         int start = offset;

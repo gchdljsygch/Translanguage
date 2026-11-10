@@ -20,6 +20,7 @@ public final class TypeErasurePass implements TransformationPass {
         boolean[] erasedModule = {false}, runtimeModule = {false};
         ImportElision imports = new ImportElision(context);
         context.program().walk(node -> {
+            if (node.kind().equals("decorator") || node.kind().equals("jsxTypeArguments")) return false;
             if (node instanceof ParsedNode) {
                 ParsedNode parsed = (ParsedNode) node;
                 if (node.kind().equals("importDeclaration")) {

@@ -157,3 +157,14 @@ P0 冻结输入和参考实现保持不变。`ReferenceCompatibilityTest` 对原
 | 类、字段、继承 | `classesFieldsMethodsAndSimpleInheritance`、`derivedFieldsAndReturnValuesPreserveInitialization`、`fieldArrowsNativeInheritanceAndEs5OnlyBuiltins` |
 | 后续版本表达式与可组合降级 | `laterExpressionsLowerAndPreserveShortCircuiting`、`optionalSpreadAndCommentsComposeWithLowering` |
 | 诊断、产物复核、并发隔离 | `unsupportedFeaturesProduceLocatedDiagnosticsAndNoPartialOutput`、`validatorRejectsResidualModernSyntax`、`sharedCompilerHasIsolatedConcurrentSessions` |
+
+
+## JSX / 装饰器扩展
+
+| 能力 | 回归测试 | 范围 |
+| --- | --- | --- |
+| TSX/JSX、工厂、片段、属性/子元素展开、文本实体 | JsxTransformTest | 四目标执行、独立语法检查、类型/运行时导入、嵌套模板/枚举/装饰器 |
+| 现代装饰器 | DecoratorTransformTest | 类/方法/访问器/字段、初始化顺序、类替换、metadata/access、计算名、导出 |
+| legacy TS 装饰器 | DecoratorTransformTest | 类/属性/方法/访问器/参数、参数属性、类替换、计算名与作用域 |
+
+详细配置和明确边界见 [JSX 与装饰器支持](JSX_DECORATORS.md)。历史 TS-016 的装饰器拒绝用例由独立执行验证替代；冻结参考输出保留不变。

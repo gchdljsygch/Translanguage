@@ -178,6 +178,7 @@ final class ExpressionParser implements GrammarRules.Expressions {
                 context.expect(")"); return context.node("parenthesizedExpression", start, inner);
             }
             case "<": {
+                if (context.jsx()) return new JsxParser(context, this, types).element();
                 context.ts(); context.take(); ParsedNode type = types.type(0); context.greater(); ParsedNode erased = context.node("typeAssertion", start, type);
                 return context.node("assertionExpression", start, erased, expression(15));
             }
@@ -205,7 +206,7 @@ final class ExpressionParser implements GrammarRules.Expressions {
             case "this": return context.leaf("thisExpression");
             case "super": return context.leaf("superExpression");
             case "true":case "false":case "null": return context.leaf("literal");
-            case "@": context.unsupported(token, "Decorator lowering is not supported."); break;
+            case "@": return classes.classDeclaration(true);
             case "#": context.unsupported(token, "Private fields are not supported."); break;
         }
         if (context.identifier(token)) {

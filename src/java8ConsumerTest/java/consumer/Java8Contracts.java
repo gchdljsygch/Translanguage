@@ -42,6 +42,13 @@ public final class Java8Contracts {
         try{new SourceLexer("other","").restore(mark);throw new AssertionError("foreign checkpoint");}catch(IllegalArgumentException expectedFailure){}
         for(JavaScriptTarget target:JavaScriptTarget.values()) {
             TypeScriptTranspiler compiler=new TypeScriptTranspiler(target);
+            TranspileResult jsx=compiler.transpile("native.tsx","const React={createElement:function(t,p){return t;},Fragment:'fragment'};const v: number=1;const n=<><div n={v}/></>;");
+            require(jsx.successful(),"Java 8 JSX: "+jsx.diagnostics());
+            for(DecoratorMode mode:DecoratorMode.values()) {
+                TranspileResult decorated=new TypeScriptTranspiler(target,mode).transpile("native.ts","function dec(value:any){return value;} @dec class C {value:number=1;} new C();");
+                require(decorated.successful(),"Java 8 decorators: "+decorated.diagnostics());
+                require(!decorated.javaScript().contains("@dec"),"decorator syntax leaked");
+            }
             String source=target==JavaScriptTarget.ES5 ? "enum E{A,B=3} class C{value=E.B;m(){return this.value}} const {value,...rest}=new C();" : "import {Unused} from './missing.js'; enum E{A,B=3} class C{value=E.B;async m(){return await this.value}} const {value,...rest}=new C();";
             TranspileResult baseline=compiler.transpile("concurrent.ts",source);require(baseline.successful(),baseline.diagnostics().toString());
             require(!baseline.javaScript().contains("missing.js"),"unused import not erased");

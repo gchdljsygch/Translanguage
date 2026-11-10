@@ -33,6 +33,7 @@ final class ClassParser implements GrammarRules.Classes {
 
     @Override public ParsedNode classDeclaration(boolean expression) {
         int start = context.start(); List<SyntaxNode> children = new ArrayList<>();
+        children.addAll(DecoratorParser.parse(context, expressions, types));
         boolean oldStrict = context.grammar.strict; context.grammar.strict = true; try {
         if (context.at("abstract")) { context.ts(); children.add(context.leaf("typeModifier")); }
         context.expect("class");
@@ -62,7 +63,7 @@ final class ClassParser implements GrammarRules.Classes {
 
     private ParsedNode classMember(boolean derived) {
         int start = context.start(); List<SyntaxNode> children = new ArrayList<>(); boolean ambient = false, isStatic = false, isAsync = false;
-        if (context.at("@")) context.unsupported(context.peek(), "Decorator lowering is not supported.");
+        children.addAll(DecoratorParser.parse(context, expressions, types));
         while (MODIFIERS.contains(context.peek().text()) || context.at("static") || context.at("async")) {
             String next = context.nextText();
             if (Compat.set("(", ":", "=", ";", "?", "!", "}", "<").contains(next)) break;
@@ -77,6 +78,8 @@ final class ClassParser implements GrammarRules.Classes {
             boolean index = context.identifier(context.peek()) && context.nextText().equals(":"); context.restore(mark);
             if (index) { context.ts(); children.add(types.indexSignature()); context.semicolon(); return context.node("indexMemberDeclaration", start, children); }
         }
+        boolean autoAccessor = context.at("accessor") && !Compat.set("(", ":", "=", ";", "}").contains(context.nextText());
+        if (autoAccessor) children.add(context.leaf("accessorModifier"));
         boolean isGenerator = context.eat("*"); String accessor = "";
         if ((context.at("get") || context.at("set")) && !Compat.set("(", ":", "=", ";", "}", "<").contains(context.nextText())) accessor = context.take().text();
         ParsedNode key = bindings.propertyName(); children.add(key);
@@ -92,12 +95,12 @@ final class ClassParser implements GrammarRules.Classes {
                 if (!context.at("{")) { context.ts(); context.semicolon(); return context.node("overloadDeclaration", start, children); }
                 if (ambient) context.unsupported(context.peek(), accessor.isEmpty() ? "An abstract/declare method cannot have an implementation." : "Abstract/declare accessors with bodies are not supported.");
                 children.add(functions.functionBody(parameters, true, false));
-                return context.node(constructor ? "constructorDeclaration" : "methodDeclaration", start, children).with("derived", Boolean.toString(derived)).with("static", Boolean.toString(isStatic)).with("async", Boolean.toString(isAsync)).with("generator", Boolean.toString(isGenerator));
+                return context.node(constructor ? "constructorDeclaration" : "methodDeclaration", start, children).with("derived", Boolean.toString(derived)).with("static", Boolean.toString(isStatic)).with("async", Boolean.toString(isAsync)).with("generator", Boolean.toString(isGenerator)).with("accessor", accessor);
             } finally { context.grammar.async = oldAsync; context.grammar.generator = oldGenerator; }
         }
         if (!accessor.isEmpty() || isGenerator) throw context.failure(context.peek(), "Method requires a parameter list");
         if (context.at(":")) children.add(types.annotation());
         if (context.eat("=")) children.add(expressions.expression(2));
-        context.semicolon(); return context.node(ambient ? "ambientDeclaration" : "propertyDeclaration", start, children).with("static", Boolean.toString(isStatic));
+        context.semicolon(); return context.node(ambient ? "ambientDeclaration" : "propertyDeclaration", start, children).with("static", Boolean.toString(isStatic)).with("autoAccessor", Boolean.toString(autoAccessor));
     }
 }

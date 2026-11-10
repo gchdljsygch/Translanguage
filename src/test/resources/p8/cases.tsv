@@ -31,7 +31,7 @@ eval-lowering	OK	JS_TARGET	OK	module	run
 reject-namespace	TS_UNSUPPORTED	TS_UNSUPPORTED	TS_UNSUPPORTED	module	syntax
 reject-import-alias	TS_SYNTAX	TS_SYNTAX	TS_SYNTAX	module	syntax
 reject-export-equals	TS_SYNTAX	TS_SYNTAX	TS_SYNTAX	module	syntax
-reject-decorator	TS_UNSUPPORTED	TS_UNSUPPORTED	TS_UNSUPPORTED	module	syntax
+reject-decorator	OK	OK	OK	module	syntax
 reject-private	TS_UNSUPPORTED	TS_UNSUPPORTED	TS_UNSUPPORTED	module	syntax
 reject-enum	TS_UNSUPPORTED	TS_UNSUPPORTED	TS_UNSUPPORTED	module	syntax
 reject-derived	TS_UNSUPPORTED	TS_UNSUPPORTED	TS_UNSUPPORTED	module	syntax

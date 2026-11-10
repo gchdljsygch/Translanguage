@@ -6,7 +6,7 @@ import java.util.List;
 
 /** Parser-directed lexical capability: expression context determines slash interpretation. */
 public interface TokenReader {
-    enum Goal { DIVISION, REGULAR_EXPRESSION }
+    enum Goal { DIVISION, REGULAR_EXPRESSION, JSX_TAG, JSX_TEXT }
     interface Checkpoint { }
     Token next(Goal goal);
     Checkpoint checkpoint();

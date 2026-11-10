@@ -58,6 +58,14 @@ class ReferenceCompatibilityTest {
                 assertEquals(lines[3], expected.diagnostics().toString(), "Reference diagnostic drift");
                 // Reviewed syntax expansions: keep the frozen reference assertions above,
                 // but validate the newly supported production behavior independently.
+                if (source.equals("@decorate class C {}")) {
+                    assertFalse(expected.successful());
+                    assertTrue(actual.successful(), actual.diagnostics().toString());
+                    var runtime = new JavaScriptRuntime(temporary);
+                    runtime.syntax(2022, "module", actual.javaScript());
+                    assertEquals("function", runtime.run("function decorate(value) {return value;}" + actual.javaScript() + "console.log(typeof C);"));
+                    return;
+                }
                 String probe = switch (source) {
                     case "enum E { A = calculate() }" -> "console.log(E.A,E[7]);";
                     case "class B {} class C extends B { constructor(public x: number) { if (x) super(); else super(); } }" ->

@@ -16,7 +16,12 @@ public final class TypeScriptTranspiler implements Transpiler {
 
     /** Uses the default TypeScript passes and emits the requested JavaScript syntax version. */
     public TypeScriptTranspiler(JavaScriptTarget target) {
-        this(target, List.of(new TypeErasurePass(), new EnumLoweringPass()));
+        this(target, DecoratorMode.STANDARD);
+    }
+
+    /** Uses default passes with an explicit decorator calling convention. */
+    public TypeScriptTranspiler(JavaScriptTarget target, DecoratorMode decorators) {
+        this(target, java.util.Arrays.asList(new JsxLoweringPass(), new TypeErasurePass(), new EnumLoweringPass(), new DecoratorLoweringPass(decorators)));
     }
 
     /** Uses exactly the supplied TypeScript passes, preserving runtime syntax and source trivia. */
@@ -53,6 +58,7 @@ public final class TypeScriptTranspiler implements Transpiler {
             if (!parsed.successful()) return new TranspileResult("", parsed.diagnostics());
             transition(State.CREATED, State.PARSED);
             TransformationContext context = new TransformationContext(sourceName, source, parsed.program(), target);
+            for (TransformationPass pass : passes) if (pass instanceof DecoratorLoweringPass) ((DecoratorLoweringPass) pass).configure(context);
             for (TransformationPass pass : passes) {
                 pass.transform(context);
                 if (!context.diagnostics().isEmpty()) return new TranspileResult("", context.diagnostics());

@@ -49,6 +49,13 @@ public final class RuntimeBindingAnalysis {
 
     private void visit(SyntaxNode node, Scope scope, boolean varBinding) {
         String kind = node.kind();
+        for (String name : context.references(node)) reference(scope, name);
+        if (kind.equals("jsxTag")) {
+            String name = attribute(node, "name");
+            if (!name.isEmpty() && !JsxNames.intrinsic(name)) reference(scope, name.split("\\.")[0]);
+            return;
+        }
+        if (kind.equals("jsxTypeArguments")) return;
         if (TypeOnlySyntax.erased(kind) || kind.equals("importDeclaration") || kind.equals("typeSpecifier")) return;
         if (kind.equals("exportDeclaration")) {
             if (attribute(node, "typeOnly").equals("true")) return;
@@ -80,6 +87,13 @@ public final class RuntimeBindingAnalysis {
         }
         if (kind.equals("classDeclaration") || kind.equals("functionDeclaration")) bindName(node, scope);
         Scope enclosing = scope;
+        if (FUNCTIONS.contains(kind)) {
+            for (SyntaxNode c : node.children()) {
+                if (c.kind().equals("decorator")) visit(c, enclosing, false);
+                if (c.kind().equals("parameters")) for (SyntaxNode p : c.children())
+                    for (SyntaxNode part : p.children()) if (part.kind().equals("decorator")) visit(part, enclosing, false);
+            }
+        }
         boolean objectMethod = kind.equals("objectMember") && node.children().stream().anyMatch(n -> n.kind().equals("functionBody"));
         if (FUNCTIONS.contains(kind) || objectMethod) {
             scope = new Scope(scope, true);
@@ -102,6 +116,7 @@ public final class RuntimeBindingAnalysis {
         Scope catchScope = null;
         for (int i = 0; i < node.children().size(); i++) {
             SyntaxNode child = node.children().get(i);
+            if (child.kind().equals("decorator") && (FUNCTIONS.contains(kind) || kind.equals("parameter") || kind.equals("parameterProperty"))) continue;
             Scope childScope = scope;
             if ((kind.equals("methodDeclaration") || objectMethod) && child.kind().equals("computedName")) childScope = enclosing;
             if (kind.equals("switchStatement") && i == 0) childScope = enclosing;

@@ -108,6 +108,7 @@ public final class EnumLoweringPass implements TransformationPass {
                 // Use an isolated edit set for typed callbacks and nested classes/enums.
                 Program subtree = new Program(context.program().range(), Compat.list(initializer), context.tokens());
                 TransformationContext nested = new TransformationContext(context.sourceName(), context.source(), subtree, context.target());
+                context.jsxPass().transform(nested);
                 new TypeErasurePass().transform(nested);
                 if (nested.diagnostics().isEmpty()) transform(nested, names, bindings);
                 if (!nested.diagnostics().isEmpty()) {
@@ -115,7 +116,16 @@ public final class EnumLoweringPass implements TransformationPass {
                     return;
                 }
                 String source = "(" + nested.render(initializer.range()) + ");";
+                TranspileResult runtime = new TypeScriptTranspiler(JavaScriptTarget.PRESERVE,
+                        java.util.Arrays.asList(context.jsxPass(), new TypeErasurePass(), new DecoratorLoweringPass(context.decoratorMode())))
+                        .transpile(context.sourceName(), source);
+                if (!runtime.successful()) { context.reportDiagnostics(runtime.diagnostics()); return; }
+                source = runtime.javaScript();
                 com.pingsu.transpiler.internal.parser.SourceParser.Result parsed = new RecursiveDescentParser().parse(context.sourceName(), source, SourceParser.Language.JAVASCRIPT);
+                if (parsed.successful() && parsed.program().children().size() > 1) {
+                    source = "((() => { return " + source + "\n})());";
+                    parsed = new RecursiveDescentParser().parse(context.sourceName(), source, SourceParser.Language.JAVASCRIPT);
+                }
                 if (!parsed.successful()) {
                     context.unsupported(initializer, "Enum initializers must be synchronous expressions: " + parsed.diagnostics().get(0).message()); return;
                 }

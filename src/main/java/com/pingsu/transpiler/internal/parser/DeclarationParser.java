@@ -89,7 +89,7 @@ final class DeclarationParser implements GrammarRules.Declarations {
         if (context.depth() != 1) throw context.failure(context.last(), "Module declarations must be at top level");
         List<SyntaxNode> children = new ArrayList<>(); boolean typeOnly = false, hasDefault = false; String namespaceExport = "";
         if (exporting && context.eat("default")) {
-            if (context.at("class") || context.at("abstract")) children.add(classes.classDeclaration(true));
+            if (context.at("class") || context.at("abstract") || context.at("@")) children.add(classes.classDeclaration(true));
             else if (context.at("function") || context.at("async") && context.nextText().equals("function")) children.add(functions.function(true));
             else { children.add(expressions.expression(2)); context.semicolon(); }
             return context.node("exportDeclaration", start, children);
