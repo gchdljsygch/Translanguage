@@ -60,6 +60,13 @@ final class StatementParser implements GrammarRules.Statements {
                     if (!(context.at("class") || context.at("abstract") || context.at("export"))) throw context.failure(context.peek(), "Decorators require a class declaration");
                     ParsedNode declaration = context.at("export") ? declarations.moduleDeclaration(true) : statement();
                     ParsedNode target = declaration;
+                    if (target.kind().equals("namespaceExport")) {
+                        ParsedNode exported = (ParsedNode) target.children().get(0);
+                        if (!(exported.kind().equals("classDeclaration") || exported.kind().equals("classExpression")))
+                            throw context.failure(context.last(), "Decorators require a class declaration");
+                        decorators.add(exported);
+                        return context.node("namespaceExport", start, context.node("decoratedDeclaration", start, decorators));
+                    }
                     if (target.kind().equals("exportDeclaration") && target.children().size() == 1) target = (ParsedNode) target.children().get(0);
                     if (!(target.kind().equals("classDeclaration") || target.kind().equals("classExpression") || target.kind().equals("decoratedDeclaration")))
                         throw context.failure(context.last(), "Decorators require a class declaration");
@@ -68,7 +75,7 @@ final class StatementParser implements GrammarRules.Statements {
                 case "interface": context.ts(); return declarations.interfaceDeclaration();
                 case "type": if (identifierAfter()) { context.ts(); return declarations.typeAlias(); } break;
                 case "declare": if (!Set.of("=", ";", "(", ".").contains(context.nextText())) { context.ts(); return declarations.ambient(); } break;
-                case "namespace", "module": if (context.grammar.ambientContext) return declarations.ambientNamespace(); if (!Set.of("=", ";", "(", ".").contains(context.nextText())) { context.ts(); context.unsupported(context.peek(), "Runtime namespaces are not supported; use ES modules."); } break;
+                case "namespace", "module": if (context.grammar.ambientContext) return declarations.ambientNamespace(); if (!Set.of("=", ";", "(", ".").contains(context.nextText())) { context.ts(); return declarations.namespaceDeclaration(); } break;
                 case "enum": context.ts(); return declarations.enumDeclaration();
                 case "const": if (context.nextText().equals("enum")) { context.ts(); return declarations.enumDeclaration(); }
                 case "let", "var": return bindings.variables(true);

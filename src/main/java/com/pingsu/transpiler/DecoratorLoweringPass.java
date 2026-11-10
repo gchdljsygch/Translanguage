@@ -130,6 +130,9 @@ public final class DecoratorLoweringPass implements TransformationPass {
         Member member(SyntaxNode node) {
             Member member = new Member(); member.node = node; member.decorators.addAll(decorators(node));
             member.key = child(node, "propertyName"); if (member.key == null) member.key = child(node, "computedName");
+            if (member.key == null) member.key = child(node, "privateIdentifier");
+            if (member.key != null && member.key.kind().equals("privateIdentifier") && !member.decorators.isEmpty())
+                context.unsupported(node, "Decorators on private members are not yet supported");
             member.isStatic = attribute(node, "static").equals("true");
             member.parameters = child(node, "parameters");
             member.kind = node.kind().equals("propertyDeclaration") ? "field" : attribute(node, "accessor");

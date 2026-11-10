@@ -89,7 +89,7 @@ final class BindingParser implements GrammarRules.Bindings {
     @Override public ParsedNode propertyName() {
         int start = context.start();
         if (context.eat("[")) { ParsedNode value = expressions.expression(1); context.expect("]"); return context.node("computedName", start, value); }
-        if (context.at("#")) context.unsupported(context.peek(), "Private fields are not supported.");
+        if (context.at("#")) throw context.failure(context.peek(), "Private names are only allowed in classes");
         if (context.peek().kind() == TokenKind.IDENTIFIER || context.peek().kind() == TokenKind.KEYWORD
                 || context.peek().kind() == TokenKind.STRING || context.peek().kind() == TokenKind.NUMBER) return context.leaf("propertyName");
         throw context.failure(context.peek(), "Expected property name");

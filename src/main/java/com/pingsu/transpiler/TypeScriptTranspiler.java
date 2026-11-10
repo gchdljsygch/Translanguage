@@ -21,7 +21,7 @@ public final class TypeScriptTranspiler implements Transpiler {
 
     /** Uses default passes with an explicit decorator calling convention. */
     public TypeScriptTranspiler(JavaScriptTarget target, DecoratorMode decorators) {
-        this(target, java.util.Arrays.asList(new JsxLoweringPass(), new TypeErasurePass(), new EnumLoweringPass(), new DecoratorLoweringPass(decorators)));
+        this(target, java.util.Arrays.asList(new JsxLoweringPass(), new TypeErasurePass(), new EnumLoweringPass(), new NamespaceLoweringPass(), new DecoratorLoweringPass(decorators)));
     }
 
     /** Uses exactly the supplied TypeScript passes, preserving runtime syntax and source trivia. */

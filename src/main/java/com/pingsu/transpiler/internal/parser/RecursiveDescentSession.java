@@ -19,5 +19,6 @@ final class RecursiveDescentSession extends AbstractParseSession {
 
     @Override protected void validate(Program program) {
         CoverGrammarValidator.validate(this, program);
+        PrivateNames.validate(this, program);
     }
 }

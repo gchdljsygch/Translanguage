@@ -40,6 +40,7 @@ final class GrammarRules {
         ParsedNode interfaceDeclaration();
         ParsedNode typeAlias();
         ParsedNode ambientNamespace();
+        ParsedNode namespaceDeclaration();
         ParsedNode ambient();
         ParsedNode enumDeclaration();
         ParsedNode moduleDeclaration(boolean exporting);

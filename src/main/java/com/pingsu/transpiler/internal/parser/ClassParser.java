@@ -81,7 +81,7 @@ final class ClassParser implements GrammarRules.Classes {
         if (autoAccessor) children.add(context.leaf("accessorModifier"));
         boolean isGenerator = context.eat("*"); String accessor = "";
         if ((context.at("get") || context.at("set")) && !Set.of("(", ":", "=", ";", "}", "<").contains(context.nextText())) accessor = context.take().text();
-        ParsedNode key = bindings.propertyName(); children.add(key);
+        ParsedNode key = context.at("#") ? PrivateNames.parse(context) : bindings.propertyName(); children.add(key);
         if (context.at("?") || context.at("!")) { context.ts(); children.add(context.leaf("typeModifier")); }
         boolean constructor = context.text(key).equals("constructor") && !isStatic && accessor.isEmpty();
         if (context.at("<")) children.add(types.typeParameters());

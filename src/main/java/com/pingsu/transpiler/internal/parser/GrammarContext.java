@@ -7,7 +7,7 @@ import java.util.Set;
 final class GrammarContext {
     final boolean moduleCode;
     boolean strict, module, async, generator, ambientContext, allowIn = true;
-    int functionDepth, loops, switches;
+    int functionDepth, loops, switches, namespaceBodyDepth;
     final Set<String> labels = new HashSet<>();
     final Set<String> iterationLabels = new HashSet<>();
 

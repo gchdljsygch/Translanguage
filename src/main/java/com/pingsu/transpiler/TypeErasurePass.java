@@ -26,6 +26,9 @@ public final class TypeErasurePass implements TransformationPass {
                     else erasedModule[0] = true;
                     return false;
                 }
+                if (node.kind().equals("namespaceExport") && node.children().stream().anyMatch(n -> DECLARATIONS.contains(n.kind()))) {
+                    context.remove(node); return false;
+                }
                 if (node.kind().equals("exportDeclaration")) {
                     SyntaxNode items = node.children().stream().filter(n -> n.kind().equals("moduleItems")).findFirst().orElse(null);
                     boolean allTypes = items != null && !items.children().isEmpty()

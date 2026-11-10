@@ -12,11 +12,18 @@ import java.util.*;
 public final class RuntimeBindingAnalysis {
     private static final Set<String> FUNCTIONS = Compat.set("functionDeclaration", "functionExpression",
             "arrowFunction", "methodDeclaration", "constructorDeclaration");
+    private static final class NamespaceBindings {
+        final Set<String> exports = new HashSet<>();
+        final List<Scope> bodies = new ArrayList<>();
+        final Map<String, NamespaceBindings> children = new HashMap<>();
+    }
     private static final class Scope {
         final Scope parent;
         final boolean varBoundary;
         final Set<String> bindings = new HashSet<>();
         final Map<String, Scope> enums = new HashMap<>();
+        final Map<String, NamespaceBindings> namespaces = new HashMap<>();
+        Map<String, NamespaceBindings> exportedNamespaces = namespaces;
         Scope(Scope parent, boolean varBoundary) { this.parent = parent; this.varBoundary = varBoundary; }
         Scope resolve(String name) {
             for (Scope scope = this; scope != null; scope = scope.parent)
@@ -94,6 +101,10 @@ public final class RuntimeBindingAnalysis {
             }
             return;
         }
+        if (kind.equals("namespaceExport") && node.children().get(0).kind().equals("namespaceDeclaration")) {
+            visitNamespace(node.children().get(0), scope, true); return;
+        }
+        if (kind.equals("namespaceDeclaration")) { visitNamespace(node, scope, false); return; }
         if (kind.equals("enumDeclaration")) {
             String name = ScopeAnalysis.decode(attribute(node, "name"));
             scope.bindings.add(name);
@@ -156,6 +167,31 @@ public final class RuntimeBindingAnalysis {
                     || FUNCTIONS.contains(kind) || objectMethod || kind.equals("bindingInitializer")) childVar = false;
             visit(child, childScope, childVar);
         }
+    }
+    private void visitNamespace(SyntaxNode node, Scope scope, boolean exported) {
+        String name = ScopeAnalysis.decode(attribute(node, "name")); scope.bindings.add(name);
+        NamespaceBindings group = (exported ? scope.exportedNamespaces : scope.namespaces)
+                .computeIfAbsent(name, ignored -> new NamespaceBindings());
+        Scope members = new Scope(scope, true); members.exportedNamespaces = group.children; group.bodies.add(members);
+        for (SyntaxNode child : node.children()) if (child.kind().equals("namespaceExport"))
+            exportedNames(child.children().get(0), group.exports);
+        for (Scope body : group.bodies) body.bindings.addAll(group.exports);
+        for (SyntaxNode child : node.children()) visit(child, members, false);
+    }
+    private void exportedNames(SyntaxNode node, Set<String> result) {
+        if (TypeOnlySyntax.erased(node.kind())) return;
+        if (node.kind().equals("decoratedDeclaration")) { exportedNames(node.children().get(node.children().size() - 1), result); return; }
+        if (node.kind().equals("namespaceDeclaration") || node.kind().equals("enumDeclaration")) {
+            result.add(ScopeAnalysis.decode(attribute(node, "name"))); return;
+        }
+        if (node.kind().equals("variableStatement")) {
+            for (SyntaxNode variable : node.children()) bindingNames(variable.children().get(0), result);
+        } else for (SyntaxNode child : node.children()) if (!attribute(child, "bindingName").isEmpty()) result.add(attribute(child, "bindingName"));
+    }
+    private void bindingNames(SyntaxNode node, Set<String> result) {
+        if (node.kind().equals("bindingInitializer") || node.kind().equals("computedName")) return;
+        if (!attribute(node, "bindingName").isEmpty()) result.add(attribute(node, "bindingName"));
+        else for (SyntaxNode child : node.children()) bindingNames(child, result);
     }
     private void bindName(SyntaxNode node, Scope scope) {
         node.children().stream().filter(n -> !attribute(n, "bindingName").isEmpty()).findFirst()

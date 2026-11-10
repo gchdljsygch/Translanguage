@@ -66,6 +66,14 @@ class ReferenceCompatibilityTest {
                     assertEquals("function", runtime.run("function decorate(value) {return value;}" + actual.javaScript() + "console.log(typeof C);"));
                     return;
                 }
+                if (source.equals("namespace Runtime { export const x = 1; }") || source.equals("class C { #private = 1; }")) {
+                    assertFalse(expected.successful()); assertTrue(actual.successful(), actual.diagnostics().toString());
+                    var runtime = new JavaScriptRuntime(temporary);
+                    runtime.syntax(2022, "module", actual.javaScript());
+                    assertEquals(source.startsWith("namespace") ? "1" : "0", runtime.run(actual.javaScript()
+                            + (source.startsWith("namespace") ? "console.log(Runtime.x);" : "console.log(Object.keys(new C()).length);")));
+                    return;
+                }
                 String probe = switch (source) {
                     case "enum E { A = calculate() }" -> "console.log(E.A,E[7]);";
                     case "class B {} class C extends B { constructor(public x: number) { if (x) super(); else super(); } }" ->

@@ -30,10 +30,13 @@ public final class ScopeAnalysis {
         if (node.is("functionDeclaration") || node.is("classDeclaration")) {
             if (!node.children().isEmpty() && node.child(0).is("identifier")) scope.bindings.add(decode(program.text(node.child(0))));
         }
+        if (node.is("namespaceDeclaration")) scope.bindings.add(decode(node.attribute("name")));
+        if (node.is("enumDeclaration")) scope.bindings.add(decode(node.attribute("name")));
         Scope enclosing = scope;
         if (Set.of("functionDeclaration", "functionExpression", "arrowFunction", "methodDeclaration", "constructorDeclaration").contains(node.kind())
                 || node.is("objectMember") && node.children().stream().anyMatch(n -> n.is("functionBody"))) scope = new Scope(scope, Kind.FUNCTION);
         else if (node.is("classDeclaration") || node.is("classExpression")) scope = new Scope(scope, Kind.CLASS);
+        else if (node.is("namespaceDeclaration")) scope = new Scope(scope, Kind.FUNCTION);
         // Parameter defaults cannot see body var/function declarations.
         else if (node.is("functionBody") || node.is("staticBlock")) scope = new Scope(scope, Kind.FUNCTION);
         else if (node.is("block") || node.is("forStatement") || node.is("switchStatement")) scope = new Scope(scope, Kind.BLOCK);

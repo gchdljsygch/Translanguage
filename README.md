@@ -162,11 +162,17 @@ LEGACY 支持类、属性、方法、访问器和参数装饰器，包括构造�
 ~~~java
 Transpiler custom = new TypeScriptTranspiler(JavaScriptTarget.ES6, List.of(
         new JsxLoweringPass("h", "Fragment"),
-        new TypeErasurePass(), new EnumLoweringPass(),
+        new TypeErasurePass(), new EnumLoweringPass(), new NamespaceLoweringPass(),
         new DecoratorLoweringPass(DecoratorMode.STANDARD)));
 ~~~
 
 自定义 pass 列表仍只执行调用方指定的阶段。装饰器 pass 会物化前序编辑并替换整个编译文本；基于原始节点区间的自定义编辑应放在它之前。完整语义、边界和测试见 [JSX 与装饰器支持](docs/JSX_DECORATORS.md)。
+
+## 私有字段与 namespace
+
+支持 `#name` 实例/静态私有字段、类型注解、读写与自增、函数值调用、可选访问和 `#name in object`。`PRESERVE` 保留原生语法；`ES2021` / `ES6` / `ES5` 按目标降级，保留品牌校验、初始化顺序和私有存储。降级使用宿主 `WeakMap` 等内置对象，不注入 polyfill。
+
+支持运行时 `namespace` / 内部 `module`，包含嵌套与点分名称、重复声明合并、可变导出、类/函数/枚举合并，以及作用域感知的导入擦除。纯类型和环境 namespace 被擦除。完整范围、自定义 pass 顺序及现有 ES5 边界见 [私有字段与 namespace](docs/PRIVATE_FIELDS_NAMESPACES.md)。
 
 ## 输出目标版本对比
 
@@ -310,8 +316,7 @@ Translanguage 是一个专注于单文件语法转换的库，**不是**完整�
 2. **Import Elision 的分析边界**：只分析当前文件的语法与运行时绑定，不查询依赖模块中某个导出究竟是类型还是值。普通本地 `export { Foo }` 视为值引用；类型重导出请写 `export type { Foo }` 或 `export { type Foo }`。带 `from` 的普通重导出不按本地使用情况删除。直接 `eval(...)` 会保守保留其作用域可见的普通导入，显式类型导入仍擦除。
 3. **不支持的 TS 特性（返回 `TS_UNSUPPORTED` 或 `TS_SYNTAX`）**：
    - JSX 自动 runtime（`react-jsx` / `react-jsxdev`）；当前支持经典工厂模式
-   - 运行时 `namespace` / `module`（`declare namespace` 环境声明支持擦除）
-   - `#private` 私有字段、装饰器 auto-accessor（`accessor`）、`emitDecoratorMetadata` 类型反射元数据；现代模式不允许参数装饰器
+   - 私有方法/访问器的显式目标降级、私有成员装饰器、装饰器 auto-accessor（`accessor`）、`emitDecoratorMetadata` 类型反射元数据；现代模式不允许参数装饰器
    - `import = require(...)` 与 `export =`
    - 直接使用 `await` / `yield` 暂停枚举初始化，或在枚举初始化表达式中使用直接 `eval(...)` / `with`
    - 带参数属性的派生构造函数在参数默认值中调用 `super()`；仅实例字段初始化支持这一位置

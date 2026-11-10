@@ -47,6 +47,30 @@ final class DeclarationParser implements GrammarRules.Declarations {
         return context.node("typeAliasDeclaration", start, children);
     }
 
+    @Override public ParsedNode namespaceDeclaration() {
+        int start = context.start(); context.take();
+        return namespacePath(start);
+    }
+
+    private ParsedNode namespacePath(int start) {
+        context.enter(); try {
+        String name = context.text(bindings.bindingIdentifier());
+        List<SyntaxNode> children = new ArrayList<>();
+        if (context.eat(".")) {
+            int nested = context.start();
+            children.add(context.node("namespaceExport", nested, namespacePath(nested)));
+        } else {
+            context.expect("{");
+            int previous = context.grammar.namespaceBodyDepth;
+            context.grammar.namespaceBodyDepth = context.depth() + 1;
+            try { children.addAll(statements.statements(true, false)); }
+            finally { context.grammar.namespaceBodyDepth = previous; }
+            context.expect("}");
+        }
+        return context.node("namespaceDeclaration", start, children).with("name", name);
+        } finally { context.leave(); }
+    }
+
     @Override public ParsedNode ambientNamespace() {
         int start = context.start(); context.take();
         if (context.peek().kind() == TokenKind.STRING) context.take(); else { bindings.bindingIdentifier(); while (context.eat(".")) bindings.bindingIdentifier(); }
@@ -85,7 +109,17 @@ final class DeclarationParser implements GrammarRules.Declarations {
     }
 
     @Override public ParsedNode moduleDeclaration(boolean exporting) {
-        int start = context.start(); context.take(); context.grammar.module = true;
+        int start = context.start(); context.take();
+        if (context.grammar.namespaceBodyDepth == context.depth()) {
+            if (!exporting || context.at("default") || context.at("{") || context.at("*"))
+                throw context.failure(context.last(), "Namespaces only allow exported declarations, not ES module imports/exports");
+            ParsedNode declaration = statements.statement();
+            String kind = declaration.kind();
+            if (!(kind.endsWith("Declaration") || kind.equals("variableStatement") || kind.equals("decoratedDeclaration")))
+                throw context.failure(context.last(), "Expected an exported namespace declaration");
+            return context.node("namespaceExport", start, declaration);
+        }
+        context.grammar.module = true;
         if (context.depth() != 1) throw context.failure(context.last(), "Module declarations must be at top level");
         List<SyntaxNode> children = new ArrayList<>(); boolean typeOnly = false, hasDefault = false; String namespaceExport = "";
         if (exporting && context.eat("default")) {

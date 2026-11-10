@@ -13,12 +13,20 @@ public final class RegularLowering implements LoweringPass {
     public RegularLowering() { this(false); }
     public RegularLowering(boolean es5) { this.es5 = es5; }
     @Override public String lower(JsProgram program) { return new Printer(program, es5).print(); }
+    static String optionalChains(JsProgram program) {
+        return new Printer(program, false, true).print();
+    }
     private static final class Printer extends ScopedJavaScriptPrinter {
         private final String apply;
-        Printer(JsProgram program, boolean es5) { super(program); apply = es5 ? "Function.prototype.apply.call(" : "Reflect.apply("; }
+        private final boolean optionalOnly;
+        Printer(JsProgram program, boolean es5) { this(program, es5, false); }
+        Printer(JsProgram program, boolean es5, boolean optionalOnly) {
+            super(program); this.optionalOnly = optionalOnly;
+            apply = es5 ? "Function.prototype.apply.call(" : "Reflect.apply(";
+        }
         private String temp() { return temporary(); }
         @Override protected String render(JsNode node) {
-            if (node.is("exportDeclaration") && !node.attribute("namespaceExport").isEmpty()) {
+            if (!optionalOnly && node.is("exportDeclaration") && !node.attribute("namespaceExport").isEmpty()) {
                 if (scopes.dynamic()) program.fail(node, "Namespace export lowering cannot expose a binding to direct eval");
                 String binding = scopes.fresh("namespace");
                 String module = program.significantTokens(node).stream()
@@ -26,10 +34,10 @@ public final class RegularLowering implements LoweringPass {
                 return "import * as " + binding + " from " + module + ";export {" + binding + " as "
                         + node.attribute("namespaceExport") + "};";
             }
-            if (node.is("numericLiteral") || node.is("bigintLiteral") || node.is("propertyName") && Unicode17.isDigit(text(node).charAt(0))) return text(node).replace("_", "");
-            if (node.is("parameters") || node.is("arguments")) return trimTrailingComma(node, super.render(node));
-            if (node.is("tryStatement")) return catchBinding(node);
-            if (node.is("objectLiteral") && node.children().stream().anyMatch(n -> n.attribute("spread").equals("true"))) return spread(node);
+            if (!optionalOnly && (node.is("numericLiteral") || node.is("bigintLiteral") || node.is("propertyName") && Unicode17.isDigit(text(node).charAt(0)))) return text(node).replace("_", "");
+            if (!optionalOnly && (node.is("parameters") || node.is("arguments"))) return trimTrailingComma(node, super.render(node));
+            if (!optionalOnly && node.is("tryStatement")) return catchBinding(node);
+            if (!optionalOnly && node.is("objectLiteral") && node.children().stream().anyMatch(n -> n.attribute("spread").equals("true"))) return spread(node);
             if (node.is("unaryExpression") && node.attribute("operator").equals("delete") && chainHasOptional(unwrap(node.child(0)))) return chain(unwrap(node.child(0)), true);
             if(node.is("taggedTemplateExpression")&&chainHasOptional(unwrap(node.child(0)))) {
                 String receiver=temp();
@@ -43,6 +51,7 @@ public final class RegularLowering implements LoweringPass {
                 }
             }
             if (chainHasOptional(node)) return chain(node, false);
+            if (optionalOnly) return super.render(node);
             if (node.is("binaryExpression")) {
                 String operator = node.attribute("operator");
                 if (operator.equals("**")) return "Math.pow(" + render(node.child(0)) + "," + render(node.child(1)) + ")";
@@ -72,7 +81,7 @@ public final class RegularLowering implements LoweringPass {
             if (node.child(0).is("superExpression")) { receiver = "super"; prefix = ""; }
             else { receiver = temp(); prefix = receiver + "=" + render(node.child(0)) + ","; }
             JsNode key = node.child(1); String target;
-            if (key.is("propertyName")) target = receiver + "." + render(key);
+            if (key.is("propertyName") || key.is("privateIdentifier")) target = receiver + "." + render(key);
             else { String name = temp(); prefix += name + "=" + render(key) + ","; target = receiver + "[" + name + "]"; }
             return new ExpressionReference(prefix, target, receiver.equals("super") ? "this" : receiver);
         }
@@ -113,7 +122,7 @@ public final class RegularLowering implements LoweringPass {
             }
             String base = value.equals("super") ? "super" : temp();
             String prefix = base.equals("super") ? "" : base + "=" + value + ",";
-            String access = base + (part.is("propertyName") ? "." + render(part) : "[" + render(part) + "]");
+            String access = base + ((part.is("propertyName") || part.is("privateIdentifier")) ? "." + render(part) : "[" + render(part) + "]");
             String continuation = chainStep(steps, index+1, access, base.equals("super") ? "this" : base, deleting,capture);
             return prefix + (optional ? nullish(base) + "?" + (deleting ? "true" : "void 0") + ":(" + continuation + ")" : continuation);
         }

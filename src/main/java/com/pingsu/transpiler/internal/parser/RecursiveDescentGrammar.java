@@ -48,6 +48,7 @@ final class RecursiveDescentGrammar implements
     @Override public ParsedNode interfaceDeclaration() { return declarations.interfaceDeclaration(); }
     @Override public ParsedNode typeAlias() { return declarations.typeAlias(); }
     @Override public ParsedNode ambientNamespace() { return declarations.ambientNamespace(); }
+    @Override public ParsedNode namespaceDeclaration() { return declarations.namespaceDeclaration(); }
     @Override public ParsedNode ambient() { return declarations.ambient(); }
     @Override public ParsedNode enumDeclaration() { return declarations.enumDeclaration(); }
     @Override public ParsedNode moduleDeclaration(boolean exporting) { return declarations.moduleDeclaration(exporting); }

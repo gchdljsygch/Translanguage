@@ -14,7 +14,7 @@ public final class SyntaxTargetValidator implements TargetValidator {
                 || node.is("objectMember") && node.children().stream().anyMatch(c -> c.is("functionBody"));
         int nested = functions + (function ? 1 : 0);
         if (functions == 0 && (node.is("unaryExpression") && node.attribute("operator").equals("await") || node.attribute("await").equals("true"))) program.fail(node, "Top-level await is outside the supported explicit targets");
-        if (output && (node.is("propertyDeclaration") || node.is("staticBlock"))) program.fail(node, "Class fields/static blocks remain in the printed artifact");
+        if (output && (node.is("propertyDeclaration") || node.is("staticBlock") || node.is("privateIdentifier"))) program.fail(node, "Class fields/static blocks remain in the printed artifact");
         if (node.is("regularExpression")) regex(program, node, target);
         if(node.is("taggedTemplateExpression")&&!node.child(0).is("parenthesizedExpression")) {
             JsNode base=node.child(0);while(Set.of("optionalMemberExpression","memberExpression","argumentsExpression").contains(base.kind())){if(base.is("optionalMemberExpression"))program.fail(node,"An optional chain cannot be an unparenthesized template tag");base=base.child(0);}

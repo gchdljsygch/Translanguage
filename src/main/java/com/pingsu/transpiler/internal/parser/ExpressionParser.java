@@ -41,7 +41,7 @@ final class ExpressionParser implements GrammarRules.Expressions {
                     context.take(); List<SyntaxNode> children = new ArrayList<>(List.of(left));
                     if (operator.equals("?.") && context.at("(")) children.add(arguments());
                     else if (operator.equals("?.") && context.eat("[")) { children.add(expression(1)); context.expect("]"); }
-                    else { if (context.at("#")) context.unsupported(context.peek(), "Private fields are not supported."); children.add(bindings.identifierName()); }
+                    else { children.add(context.at("#") ? PrivateNames.parse(context) : bindings.identifierName()); }
                     left = context.node(operator.equals("?.") ? "optionalMemberExpression" : "memberExpression", start, children); continue;
                 }
                 if (context.eat("[")) { ParsedNode key = expression(1); context.expect("]"); left = context.node("memberExpression", start, left, key); continue; }
@@ -205,7 +205,11 @@ final class ExpressionParser implements GrammarRules.Expressions {
             case "super": return context.leaf("superExpression");
             case "true", "false", "null": return context.leaf("literal");
             case "@": return classes.classDeclaration(true);
-            case "#": context.unsupported(token, "Private fields are not supported."); break;
+            case "#": {
+                ParsedNode name = PrivateNames.parse(context);
+                if (!context.at("in")) throw context.failure(token, "A private name requires the in operator");
+                return name;
+            }
         }
         if (context.identifier(token)) {
             if (token.kind() == TokenKind.KEYWORD && token.text().contains("\\")) throw context.failure(token, "Escaped reserved keyword");
@@ -219,7 +223,7 @@ final class ExpressionParser implements GrammarRules.Expressions {
         ParsedNode callee = prefix();
         while (true) {
             int begin = callee.range().start();
-            if (context.eat(".")) callee = context.node("memberExpression", begin, callee, bindings.identifierName());
+            if (context.eat(".")) callee = context.node("memberExpression", begin, callee, context.at("#") ? PrivateNames.parse(context) : bindings.identifierName());
             else if (context.eat("[")) { ParsedNode key = expression(1); context.expect("]"); callee = context.node("memberExpression", begin, callee, key); }
             else if (context.at("<") && context.language() == Language.TYPESCRIPT) {
                 Mark mark = context.mark(); ParsedNode typeArguments;

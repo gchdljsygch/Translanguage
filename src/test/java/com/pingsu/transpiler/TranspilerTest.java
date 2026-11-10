@@ -206,8 +206,6 @@ class TranspilerTest {
     @org.junit.jupiter.api.DisplayName("TS-016 unsupportedRuntimeFeaturesFailExplicitly")
     @Test void unsupportedRuntimeFeaturesFailExplicitly() {
         for (String source : new String[]{
-                "namespace Runtime { export const x = 1; }",
-                "class C { #private = 1; }",
                 "enum E { A = calculate(), B }",
                 "enum E { A = 'a', B }",
                 "class B {} class C extends B { constructor(public {x}: {x:number}) { super(); } }"}) {

@@ -147,7 +147,7 @@ class OwnJavaScriptBackendTest {
 
     @Test void actualArtifactsAreReparsedAndChecked() {
         var emitter = new DefaultJavaScriptEmitter();
-        for (String source : List.of("const x: number=1", "const x=1; !", "await value", "class C { #x=1 }", "const x=/(?i:a)/", "const x=/(/")) {
+        for (String source : List.of("const x: number=1", "const x=1; !", "await value", "class C { read(){ return this.#missing; } }", "const x=/(?i:a)/", "const x=/(/")) {
             var result=emitter.emit("emitted.js",source,JavaScriptTarget.ES2021);assertFalse(result.successful(),source);assertEquals("",result.javaScript());
             assertTrue(result.diagnostics().stream().allMatch(d->d.code().equals("JS_TARGET")&&d.sourceName().equals("emitted.js")));
         }

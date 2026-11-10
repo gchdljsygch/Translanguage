@@ -119,7 +119,7 @@ generatorDefinition	functions	alias	object generator consumed through generatorM
 iteratorBlock	functions	alias	object methods consumed through objectLiteral/propertyAssignment
 iteratorDefinition	functions	alias	object methods consumed through generatorMethod
 classElementName	fields	visited	Observed in independent reference parse tree
-privateIdentifier	reject-private	rejected	classElementName chooses propertyName; private fields explicitly rejected
+privateIdentifier	reject-private	rejected	Historical fixture now accepted; private identifier parsing and lowering covered by PrivateFieldsTest
 formalParameterList	expressions	visited	Observed in independent reference parse tree
 formalParameterArg	expressions	visited	Observed in independent reference parse tree
 lastFormalParameterArg	types	alias	P1-added reference rule; typed rest consumed by restParameter
