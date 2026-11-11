@@ -16,7 +16,8 @@ public final class ClassFieldsLowering implements LoweringPass {
         return node.is("privateIdentifier") || node.children().stream().anyMatch(ClassFieldsLowering::hasPrivate);
     }
     private static final class Printer extends ScopedJavaScriptPrinter {
-        private String defineField, privateReference, privateInitialize, privateHas, privateName;
+        private String defineField, privateReference, privateInitialize, privateHas, privateName, privateAccessorReference;
+        private final Set<String> accessorStores=new HashSet<>();
         private final Map<JsNode, String> privateStores = new IdentityHashMap<>();
         private final Map<JsNode, List<String>> classStores = new IdentityHashMap<>();
         private final IdentityHashMap<JsNode, String> superInitializers = new IdentityHashMap<>();
@@ -30,6 +31,8 @@ public final class ClassFieldsLowering implements LoweringPass {
             if (privateReference != null) result += "\nfunction " + privateReference + "(receiver, state) {"
                     + "return {get value(){if(!state.has(receiver))throw new TypeError('Invalid private receiver');return state.get(receiver).value;},"
                     + "set value(value){if(!state.has(receiver))throw new TypeError('Invalid private receiver');state.get(receiver).value=value;}};}\n";
+            if(privateAccessorReference!=null)result+="\nfunction "+privateAccessorReference+"(receiver,state){return {get value(){if(!state.has(receiver))throw new TypeError('Invalid private receiver');var d=state.get(receiver).value;if(!d.get)throw new TypeError('Private accessor has no getter');return Function.prototype.call.call(d.get,receiver);},"
+                    +"set value(value){if(!state.has(receiver))throw new TypeError('Invalid private receiver');var d=state.get(receiver).value;if(!d.set)throw new TypeError('Private accessor has no setter');Function.prototype.call.call(d.set,receiver,value);}};}\n";
             if (privateInitialize != null) result += "\nfunction " + privateInitialize + "(receiver,state,value){"
                     + "if(state.has(receiver))throw new TypeError('Private field already initialized');state.set(receiver,{value:value});}\n";
             if (privateHas != null) result += "\nfunction " + privateHas + "(state,receiver){"
@@ -43,12 +46,14 @@ public final class ClassFieldsLowering implements LoweringPass {
         private void indexPrivate(JsNode node, Map<String, String> environment) {
             if (node.is("classDeclaration") || node.is("classExpression")) {
                 Map<String, String> inner = new HashMap<>(environment);
-                List<String> stores = new ArrayList<>();
+                List<String> stores = new ArrayList<>();Map<String,String> declared=new HashMap<>();
                 for (JsNode member : node.children()) {
                     if (member.children().isEmpty() || !member.child(0).is("privateIdentifier")) continue;
-                    if (!member.is("propertyDeclaration")) program.fail(member, "Private methods/accessors require PRESERVE; explicit targets currently lower private fields");
-                    String store = scopes.fresh("private"); stores.add(store);
-                    inner.put(member.child(0).attribute("name"), store);
+                    if (!member.is("propertyDeclaration")&&!privateAccessor(member)) program.fail(member, "Private methods require PRESERVE; explicit targets lower private fields and accessors");
+                    String name=member.child(0).attribute("name"),store=declared.get(name);
+                    if(store==null){store=scopes.fresh("private");stores.add(store);declared.put(name,store);}
+                    if(privateAccessor(member))accessorStores.add(store);
+                    inner.put(name, store);
                 }
                 classStores.put(node, stores);
                 for (JsNode child : node.children()) {
@@ -64,7 +69,12 @@ public final class ClassFieldsLowering implements LoweringPass {
         private boolean privateMember(JsNode node) {
             return node.is("memberExpression") && node.child(1).is("privateIdentifier");
         }
+        private boolean privateAccessor(JsNode node){return node.is("methodDeclaration")&&!node.children().isEmpty()&&node.child(0).is("privateIdentifier")&&!node.attribute("accessor").isEmpty();}
         private String privateRead(JsNode member, String receiver) {
+            if(accessorStores.contains(privateStores.get(member.child(1)))){
+                if(privateAccessorReference==null)privateAccessorReference=scopes.fresh("privateAccessor");
+                return privateAccessorReference+"("+receiver+","+privateStores.get(member.child(1))+").value";
+            }
             if (privateReference == null) privateReference = scopes.fresh("privateReference");
             return privateReference + "(" + receiver + "," + privateStores.get(member.child(1)) + ").value";
         }
@@ -76,7 +86,7 @@ public final class ClassFieldsLowering implements LoweringPass {
             if (defineField == null) defineField = scopes.fresh("defineField");
             return defineField + "(" + receiver + "," + key + "," + value + ");\n";
         }
-        private boolean fields(JsNode node) { return node.children().stream().anyMatch(n -> n.is("propertyDeclaration") || n.is("staticBlock")); }
+        private boolean fields(JsNode node) { return node.children().stream().anyMatch(n -> n.is("propertyDeclaration") || n.is("staticBlock") || privateAccessor(n)); }
         @Override protected String render(JsNode node) {
             if (node.is("binaryExpression") && node.child(0).is("privateIdentifier") && node.attribute("operator").equals("in")) {
                 if (privateHas == null) privateHas = scopes.fresh("privateHas");
@@ -157,7 +167,7 @@ public final class ClassFieldsLowering implements LoweringPass {
         private boolean simpleFields(JsNode owner) {
             boolean defaultConstructor = owner.children().stream().noneMatch(n -> n.is("constructorDeclaration"));
             for (JsNode member : owner.children()) {
-                if (member.is("staticBlock")) return false;
+                if (member.is("staticBlock") || privateAccessor(member)) return false;
                 if (!member.is("propertyDeclaration")) continue;
                 if (member.attribute("static").equals("true") || member.child(0).is("computedName") || member.child(0).is("privateIdentifier")) return false;
                 if (member.children().size() > 1 && !(defaultConstructor
@@ -250,6 +260,19 @@ public final class ClassFieldsLowering implements LoweringPass {
             List<String> keys = new ArrayList<>();
             StringBuilder instance = new StringBuilder(), statics = new StringBuilder();
             Map<JsNode, String> members = new IdentityHashMap<>();
+            List<String> accessorDeclarations=new ArrayList<>();Map<String,String> accessorKeys=new HashMap<>();
+            StringBuilder extractAccessors=new StringBuilder(),instanceBrands=new StringBuilder(),staticBrands=new StringBuilder();
+            for(JsNode member:owner.children())if(privateAccessor(member)){
+                JsNode key=member.child(0);String store=privateStores.get(key),symbol=accessorKeys.get(store);
+                if(symbol==null){
+                    symbol=scopes.fresh("accessorKey");String descriptor=scopes.fresh("accessorDescriptor");accessorKeys.put(store,symbol);
+                    accessorDeclarations.add(symbol+"=Symbol()");accessorDeclarations.add(descriptor);
+                    String target=member.attribute("static").equals("true")?ref:ref+".prototype";
+                    extractAccessors.append(descriptor).append("=Object.getOwnPropertyDescriptor(").append(target).append(',').append(symbol).append(");delete ").append(target).append('[').append(symbol).append("];\n");
+                    (member.attribute("static").equals("true")?staticBrands:instanceBrands).append(privateInit(key,descriptor));
+                }
+                final String computed="["+symbol+"]";members.put(member,children(member,c->c==key?computed:render(c)));
+            }
             JsNode constructor = null;
             for (JsNode member : owner.children()) {
                 if (member.is("constructorDeclaration")) constructor = member;
@@ -287,6 +310,7 @@ public final class ClassFieldsLowering implements LoweringPass {
                         ? define("this", property, value)
                         : "Object.defineProperty(this," + property + ",{value:" + value + ",writable:true,enumerable:true,configurable:true});\n");
             }
+            instance.insert(0,instanceBrands);statics.insert(0,staticBrands);
             if (instance.length() > 0 && constructor != null) {
                 JsNode body = constructor.children().stream().filter(n -> n.is("functionBody")).findFirst().orElseThrow(java.util.NoSuchElementException::new);
                 members.put(constructor, initializeConstructor(owner, constructor, body, init + ".call(this);\n", init + ".call(this),"));
@@ -305,9 +329,10 @@ public final class ClassFieldsLowering implements LoweringPass {
             if (!keys.isEmpty()) declarations.add(marker + "=Symbol()");
             if (instance.length() > 0) { declarations.add(instanceKey + "=Symbol()"); declarations.add(init); }
             if (statics.length() > 0) { declarations.add(staticKey + "=Symbol()"); declarations.add(staticInit); }
-            declarations.addAll(keys);
+            declarations.addAll(keys);declarations.addAll(accessorDeclarations);
             StringBuilder out = new StringBuilder("(()=>{\nlet ").append(String.join(",", declarations));
             out.append(";\nlet ").append(ref).append('=').append(classText).append(";\n");
+            out.append(extractAccessors);
             if (!keys.isEmpty()) out.append("delete ").append(ref).append('[').append(marker).append("];\n");
             if (instance.length() > 0) out.append(init).append('=').append(ref).append(".prototype[").append(instanceKey).append("];delete ").append(ref).append(".prototype[").append(instanceKey).append("];\n");
             if (statics.length() > 0) out.append(staticInit).append('=').append(ref).append('[').append(staticKey).append("];delete ").append(ref).append('[').append(staticKey).append("];\n");

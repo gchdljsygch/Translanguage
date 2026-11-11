@@ -164,14 +164,14 @@ class Es5TargetTest {
             """);
     }
     @Test void unsupportedFeaturesProduceLocatedDiagnosticsAndNoPartialOutput() {
-        for(String source:List.of("export const x=1;","import './x';","export interface Empty {}","async function f(){await p;}","function* f(){yield 1;}","const x=1n;","const x=/x/u;","const x=/(?<name>x)/;","const x=tag`x`;","function f(){return new.target;}","const x=import('x');","const \uD801\uDC00=1;")) {
+        for(String source:List.of("export const x=1;","import './x';","export interface Empty {}","const x=/x/u;","const x=/(?<name>x)/;","function f(){return new.target;}","const x=import('x');","const \uD801\uDC00=1;")) {
             TranspileResult result=new TypeScriptTranspiler(JavaScriptTarget.ES5).transpile("unsupported.ts",source);
             assertFalse(result.successful(),source);assertEquals("",result.javaScript());
             assertEquals("JS_TARGET",result.diagnostics().get(0).code());assertEquals("unsupported.ts",result.diagnostics().get(0).sourceName());assertTrue(result.diagnostics().get(0).line()>0);
         }
     }
     @Test void validatorRejectsResidualModernSyntax() {
-        for(String source:List.of("let x=1;","const f=()=>1;","class C {}","var x=`s`;","var o={method(){}};","var o={x};","var [x]=a;","f(...a);","for(var x of a){}","var n=0b10;","function f(x=2){}")) {
+        for(String source:List.of("async function f(){}","function* f(){yield 1;}","var n=1n;","tag`x`;","let x=1;","const f=()=>1;","class C {}","var x=`s`;","var o={method(){}};","var o={x};","var [x]=a;","f(...a);","for(var x of a){}","var n=0b10;","function f(x=2){}")) {
             assertThrows(TargetFailure.class,()->new SyntaxTargetValidator().validate(JsProgram.parse("leak.js",source),JavaScriptTarget.ES5),source);
         }
     }

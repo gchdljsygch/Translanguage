@@ -77,7 +77,7 @@
 | TS 不支持边界 | TS-015/016、JT-012 | lexer 非法输入/深模板限制 | P2/P3 已完成；自有语法拒绝、深度与工作预算、完整输入消费 |
 | 扩展、并发、状态 | TS-020、JT-013/014 | SourceModelTest、CompilationLifecycleTest、StandaloneConsumer | P7 全目标消费在 JDK 17/25 仅主 JAR 通过，包含扩展追加异步源码 |
 
-156 条原始 parser 规则及后续新增的 3 条规则已关联到固定输入和三目标预期，详见 [规则映射](GRAMMAR_RULE_MAPPING.md)。其中 144 条有独立参考 parser 的实际访问记录，13 条标为替代解析路径/别名，2 条映射明确拒绝输入；不将替代路径计作实际规则访问，也不宣称完整 ECMAScript/TypeScript grammar 分支覆盖。最终性能预算和首次实测基线见 [发行验收](RELEASE_ACCEPTANCE.md)。
+156 条原始 parser 规则及后续新增的 3 条规则已关联到固定输入和三目标预期，详见 [规则映射](GRAMMAR_RULE_MAPPING.md)。其中 144 条有独立参考 parser 的实际访问记录，14 条标为替代解析路径/别名，1 条映射明确拒绝输入；不将替代路径计作实际规则访问，也不宣称完整 ECMAScript/TypeScript grammar 分支覆盖。最终性能预算和首次实测基线见 [发行验收](RELEASE_ACCEPTANCE.md)。
 
 ## 新增测试与隔离检查
 
@@ -168,3 +168,10 @@ P0 冻结输入和参考实现保持不变。`ReferenceCompatibilityTest` 对原
 | legacy TS 装饰器 | DecoratorTransformTest | 类/属性/方法/访问器/参数、参数属性、类替换、计算名与作用域 |
 
 详细配置和明确边界见 [JSX 与装饰器支持](JSX_DECORATORS.md)。历史 TS-016 的装饰器拒绝用例由独立执行验证替代；冻结参考输出保留不变。
+
+
+## ES5 扩展语法（2026-11-10）
+
+`Es5ExtendedSyntaxTest` 以 Acorn ES5 script 语法校验和 Node 行为对照覆盖 async/await、同步/异步生成器、委托与异常完成、带标签模板、静态块、BigInt、CommonJS、环境声明、资源管理与公开/私有 auto-accessor。生成器状态机、模板对象缓存及资源栈均由单次编译创建，辅助函数按需内联，不引入生产依赖。
+
+`p8/reject-import-alias` 与 `p8/reject-export-equals` 保留历史 fixture ID，其预期已改为成功生成 CommonJS script；前者在绑定未使用时被擦除。具体宿主 API 要求与仍明确拒绝的输入见 [ES5 支持](ES5_SUPPORT.md)。

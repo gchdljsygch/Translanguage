@@ -59,7 +59,14 @@ public final class StandaloneConsumer {
             if(target==JavaScriptTarget.ES5) {
                 require(compiler.transpile("es5.ts","const fs=[];for(let i=0;i<3;i++)fs.push(()=>i);class Box{value=4;}console.log(fs[0](),new Box().value);").successful(),"ES5 synchronous lowering");
                 require(!compiler.transpile("module.ts","export const value=1;").successful(),"ES5 modules must be diagnosed");
-                require(!compiler.transpile("async.ts","async function f(){await 1;}").successful(),"ES5 async must be diagnosed");
+                for(String code:new String[]{
+                        "async function f(){return await 1;} function* g(){try{yield* [1,2];}finally{yield 3;}}",
+                        "function tag(parts){return parts.raw[0];}tag`raw`;class C{static{this.n=2;}accessor value=3;accessor #private=4;}const big=9007199254740993n**2n;",
+                        "import x=require('business');declare global{interface I{value:number;}}export as namespace Library;export=x;",
+                        "function f(){using x={[Symbol.dispose](){}};return 1;}async function g(){await using x=null;return await 2;}"}) {
+                    TranspileResult output=compiler.transpile("es5-extension.ts",code);
+                    require(output.successful(),output.diagnostics().toString());
+                }
             }
             System.out.println("target=" + target + " ok");
         }

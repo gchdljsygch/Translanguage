@@ -21,7 +21,7 @@ public final class SyntaxTargetValidator implements TargetValidator {
         }
         if (target == JavaScriptTarget.ES6 || target == JavaScriptTarget.ES5) {
             if (output && !node.attribute("namespaceExport").isEmpty()) program.fail(node, "Namespace re-export remains in " + target + " output");
-            if (Set.of("bigintLiteral", "importExpression", "importMetaExpression").contains(node.kind())) program.fail(node, target + " cannot represent " + node.kind());
+            if ((output || target == JavaScriptTarget.ES6) && Set.of("bigintLiteral", "importExpression", "importMetaExpression").contains(node.kind())) program.fail(node, target + " cannot represent " + node.kind());
             if (output && (node.is("optionalMemberExpression") || node.is("restBinding") || node.attribute("spread").equals("true")
                     || Set.of("??", "**", "**=", "&&=", "||=", "??=").contains(node.attribute("operator"))
                     || node.attribute("async").equals("true") || node.attribute("await").equals("true")

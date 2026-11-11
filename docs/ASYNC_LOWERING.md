@@ -38,3 +38,10 @@ JDK 17/25 的 StandaloneConsumer 只用主 JAR，覆盖三目标、完整异步�
 - 不承诺函数/迭代器原型、构造器、toString 的反射形态一致；不提供业务 API polyfill。
 - 缺少 Symbol.asyncIterator 时，私有 key 只保证同一输出的内部生成器/for-await 互通，不安装全局协议。
 - P8 的无工具安装、无缓存、操作系统断网、最终性能和正式发行验收仍待完成。
+
+
+## ES5 状态机后端（2026-11-10）
+
+ES5 现在复用此异步协议转换，并在同步语法和词法绑定处理后调用 `GeneratorLowering`。生成器主体被编译为可恢复的 switch 状态，`GeneratorRuntime` 路由 next/throw/return、委托以及 catch/finally 完成记录；最终不含 `function*`、yield、async 或 await 语法。简单 async 仅要求 Promise，生成的调用使用 ES5 的 Function.prototype.apply.call；异步迭代仍使用宿主 Symbol 协议。
+
+`ResourceManagementLowering` 在异步转换前把 using / await using 转为受保护的资源栈，使异步清理与生成器关闭复用同一套 finally 完成路径。`Es5ExtendedSyntaxTest` 用 Acorn ES5 复核输出，并对暂停、委托、异常、资源释放及模板/类语法组合进行运行验证。

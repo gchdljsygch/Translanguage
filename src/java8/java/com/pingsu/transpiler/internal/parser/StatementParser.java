@@ -80,6 +80,8 @@ final class StatementParser implements GrammarRules.Statements {
                 case "enum": context.ts(); return declarations.enumDeclaration();
                 case "const": if (context.nextText().equals("enum")) { context.ts(); return declarations.enumDeclaration(); }
                 case "let":case "var": return bindings.variables(true);
+                case "using": if (resourceAhead()) return bindings.variables(true); break;
+                case "await": if (context.nextText().equals("using")) return bindings.variables(true); break;
                 case "abstract": if (context.nextText().equals("class")) { context.ts(); return classes.classDeclaration(false); } break;
                 case "class": return classes.classDeclaration(false);
                 case "function": return functions.function(false);
@@ -114,6 +116,7 @@ final class StatementParser implements GrammarRules.Statements {
         } finally { context.leave(); }
     }
 
+    private boolean resourceAhead() { Mark mark=context.mark();context.take();boolean result=!context.newline()&&context.identifier(context.peek());context.restore(mark);return result; }
     private boolean identifierAfter() { Mark mark = context.mark(); context.take(); boolean result = context.identifier(context.peek()); context.restore(mark); return result; }
 
     @Override public ParsedNode block(boolean functionBody) {
@@ -124,7 +127,7 @@ final class StatementParser implements GrammarRules.Statements {
     private ParsedNode forStatement() {
         int start = context.start(); context.expect("for"); boolean awaiting = context.eat("await"); context.expect("(");
         List<SyntaxNode> children = new ArrayList<>(); boolean oldIn = context.grammar.allowIn; context.grammar.allowIn = false;
-        try { if (!context.at(";")) children.add(Compat.set("var", "let", "const").contains(context.peek().text()) ? bindings.variables(false) : expressions.expression(1)); }
+        try { if (!context.at(";")) children.add((Compat.set("var", "let", "const", "using").contains(context.peek().text()) || context.at("await") && context.nextText().equals("using")) ? bindings.variables(false) : expressions.expression(1)); }
         finally { context.grammar.allowIn = oldIn; }
         if (context.at("in") || context.at("of")) {
             String operator = context.take().text();

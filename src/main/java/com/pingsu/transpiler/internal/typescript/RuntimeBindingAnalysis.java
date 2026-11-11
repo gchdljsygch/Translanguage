@@ -64,6 +64,10 @@ public final class RuntimeBindingAnalysis {
         }
         if (kind.equals("jsxTypeArguments")) return;
         if (TypeOnlySyntax.erased(kind) || kind.equals("importDeclaration") || kind.equals("typeSpecifier")) return;
+        if (kind.equals("importEqualsDeclaration")) {
+            if (!attribute(node,"typeOnly").equals("true")) visit(node.children().get(1),scope,false);
+            return;
+        }
         if (kind.equals("exportDeclaration")) {
             if (attribute(node, "typeOnly").equals("true")) return;
             if (!attribute(node, "moduleSource").isEmpty()) return; // Re-exports do not read local bindings.

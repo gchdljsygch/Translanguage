@@ -75,17 +75,27 @@ final class DeclarationParser implements GrammarRules.Declarations {
         int start = context.start(); context.take();
         if (context.peek().kind() == TokenKind.STRING) context.take(); else { bindings.bindingIdentifier(); while (context.eat(".")) bindings.bindingIdentifier(); }
         context.expect("{"); List<SyntaxNode> children = new ArrayList<>();
-        while (!context.at("}")) { context.eat("export"); children.add(statements.statement()); }
+        while (!context.at("}")) children.add(ambientStatement());
         context.expect("}"); return context.node("ambientDeclaration", start, children);
+    }
+
+    private ParsedNode ambientStatement() {
+        int start=context.start();
+        if(context.eat("export")&&context.eat("=")) {
+            ParsedNode value=expressions.expression(2);context.semicolon();return context.node("exportAssignment",start,value);
+        }
+        return statements.statement();
     }
 
     @Override public ParsedNode ambient() {
         int start = context.start(); context.expect("declare"); List<SyntaxNode> children = new ArrayList<>();
         boolean oldAmbient = context.grammar.ambientContext; context.grammar.ambientContext = true; try {
-        if (context.eat("namespace") || context.eat("module")) {
+        if (context.eat("global")) {
+            context.expect("{"); children.addAll(statements.statements(true, false)); context.expect("}");
+        } else if (context.eat("namespace") || context.eat("module")) {
             if (context.peek().kind() == TokenKind.STRING) context.take(); else { bindings.bindingIdentifier(); while (context.eat(".")) bindings.bindingIdentifier(); }
             context.expect("{");
-            while (!context.at("}")) { context.eat("export"); children.add(statements.statement()); }
+            while (!context.at("}")) children.add(ambientStatement());
             context.expect("}");
         } else if (Set.of("var", "let", "const").contains(context.peek().text()) && !context.nextText().equals("enum")) {
             // Ambient const declarations legitimately have no runtime initializer.
@@ -119,17 +129,38 @@ final class DeclarationParser implements GrammarRules.Declarations {
                 throw context.failure(context.last(), "Expected an exported namespace declaration");
             return context.node("namespaceExport", start, declaration);
         }
-        context.grammar.module = true;
-        if (context.depth() != 1) throw context.failure(context.last(), "Module declarations must be at top level");
+        if (!context.grammar.ambientContext) context.grammar.module = true;
+        if (context.depth() != 1 && !context.grammar.ambientContext) throw context.failure(context.last(), "Module declarations must be at top level");
         List<SyntaxNode> children = new ArrayList<>(); boolean typeOnly = false, hasDefault = false; String namespaceExport = "";
+        if (exporting && context.eat("=")) {
+            context.ts(); children.add(expressions.expression(2)); context.semicolon();
+            return context.node("exportAssignment", start, children);
+        }
+        if (exporting && context.eat("as")) {
+            context.ts(); context.expect("namespace"); children.add(bindings.bindingIdentifier()); context.semicolon();
+            return context.node("ambientDeclaration", start, children);
+        }
         if (exporting && context.eat("default")) {
             if (context.at("class") || context.at("abstract") || context.at("@")) children.add(classes.classDeclaration(true));
             else if (context.at("function") || context.at("async") && context.nextText().equals("function")) children.add(functions.function(true));
             else { children.add(expressions.expression(2)); context.semicolon(); }
             return context.node("exportDeclaration", start, children);
         }
-        if (context.at("type") && (context.nextText().equals("{") || context.nextText().equals("*") || !exporting && !Set.of(",", "from").contains(context.nextText()))) {
+        if (context.at("type") && (context.nextText().equals("{") || context.nextText().equals("*") || !exporting && !Set.of(",", "from", "=").contains(context.nextText()))) {
             context.ts(); context.take(); typeOnly = true;
+        }
+        if (!exporting && context.identifier(context.peek()) && context.nextText().equals("=")) {
+            context.ts(); children.add(bindings.bindingIdentifier()); context.expect("=");
+            if (context.eat("require")) {
+                context.expect("(");
+                if (context.peek().kind() != TokenKind.STRING) throw context.failure(context.peek(), "Expected module string");
+                children.add(context.leaf("stringLiteral")); context.expect(")");
+            } else {
+                ParsedNode reference = bindings.bindingIdentifier().with("bindingName", "");
+                while (context.eat(".")) reference = context.node("memberExpression", reference.range().start(), reference, bindings.identifierName());
+                children.add(reference);
+            }
+            context.semicolon(); return context.node("importEqualsDeclaration", start, children).with("typeOnly", Boolean.toString(typeOnly));
         }
         if (exporting && !context.at("{") && !context.at("*")) {
             children.add(statements.statement()); return context.node("exportDeclaration", start, children);

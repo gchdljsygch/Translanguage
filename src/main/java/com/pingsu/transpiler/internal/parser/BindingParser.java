@@ -25,16 +25,18 @@ final class BindingParser implements GrammarRules.Bindings {
     }
 
     @Override public ParsedNode variables(boolean terminate) {
-        int start = context.start(); String modifier = context.take().text(); List<SyntaxNode> declarations = new ArrayList<>();
+        int start = context.start(); boolean awaiting = context.eat("await"); String modifier = context.take().text(); List<SyntaxNode> declarations = new ArrayList<>();
+        boolean resource = modifier.equals("using");
+        if (awaiting && !context.grammar.async) throw context.failure(context.last(), "await using requires an async function");
         do {
-            int begin = context.start(); List<SyntaxNode> children = new ArrayList<>(); children.add(binding());
+            int begin = context.start(); List<SyntaxNode> children = new ArrayList<>(); children.add(resource ? bindingIdentifier() : binding());
             if (context.at("!")) { context.ts(); children.add(context.leaf("typeModifier")); }
             if (context.at(":")) children.add(types.annotation());
             if (context.eat("=")) children.add(expressions.expression(2));
-            else if (modifier.equals("const") && !context.grammar.ambientContext && !(context.at("in") || context.at("of"))) throw context.failure(context.peek(), "const requires an initializer");
+            else if ((modifier.equals("const") || resource) && !context.grammar.ambientContext && !(context.at("in") || context.at("of"))) throw context.failure(context.peek(), "const requires an initializer");
             declarations.add(context.node("variableDeclaration", begin, children));
         } while (context.eat(","));
-        if (terminate) context.semicolon(); return context.node("variableStatement", start, declarations);
+        if (terminate) context.semicolon(); return context.node("variableStatement", start, declarations).with("using", Boolean.toString(resource)).with("await", Boolean.toString(awaiting));
     }
 
     @Override public ParsedNode binding() {

@@ -18,12 +18,25 @@ public final class RegularLowering implements LoweringPass {
     }
     private static final class Printer extends ScopedJavaScriptPrinter {
         private final String apply;
-        private final boolean optionalOnly;
+        private final boolean optionalOnly, es5;
+        private String power;
         Printer(JsProgram program, boolean es5) { this(program, es5, false); }
         Printer(JsProgram program, boolean es5, boolean optionalOnly) {
-            super(program); this.optionalOnly = optionalOnly;
+            super(program); this.optionalOnly = optionalOnly; this.es5=es5;
             apply = es5 ? "Function.prototype.apply.call(" : "Reflect.apply(";
         }
+        @Override public String print() {
+            String result=super.print();if(power==null)return result;
+            return result+"\nfunction "+power+"(left,right){function numeric(value){if(value!==null&&(typeof value==='object'||typeof value==='function')){var method=typeof Symbol!=='undefined'&&Symbol.toPrimitive&&value[Symbol.toPrimitive],primitive;"
+                +"if(method!=null){primitive=Function.prototype.call.call(method,value,'number');if(primitive!==null&&(typeof primitive==='object'||typeof primitive==='function'))throw new TypeError('Invalid primitive');value=primitive;}"
+                +"else{method=value.valueOf;if(typeof method==='function')primitive=Function.prototype.call.call(method,value);else primitive=value;"
+                +"if(primitive!==null&&(typeof primitive==='object'||typeof primitive==='function')){method=value.toString;if(typeof method==='function')primitive=Function.prototype.call.call(method,value);"
+                +"if(primitive!==null&&(typeof primitive==='object'||typeof primitive==='function'))throw new TypeError('Invalid primitive');}value=primitive;}}return typeof value==='bigint'?value:+value;}"
+                +"left=numeric(left);right=numeric(right);if(typeof left!=='bigint'&&typeof right!=='bigint')return Math.pow(left,right);"
+                +"if(typeof left!=='bigint'||typeof right!=='bigint')throw new TypeError('Cannot mix BigInt and other types');var zero=BigInt(0),one=BigInt(1),two=BigInt(2),result=one;"
+                +"if(right<zero)throw new RangeError('Negative BigInt exponent');while(right>zero){if(right%two===one)result*=left;right/=two;if(right>zero)left*=left;}return result;}";
+        }
+        private String power(String left,String right) {if(!es5)return "Math.pow("+left+","+right+")";if(power==null)power=scopes.fresh("power");return power+"("+left+","+right+")";}
         private String temp() { return temporary(); }
         @Override protected String render(JsNode node) {
             if (!optionalOnly && node.is("exportDeclaration") && !node.attribute("namespaceExport").isEmpty()) {
@@ -54,7 +67,7 @@ public final class RegularLowering implements LoweringPass {
             if (optionalOnly) return super.render(node);
             if (node.is("binaryExpression")) {
                 String operator = node.attribute("operator");
-                if (operator.equals("**")) return "Math.pow(" + render(node.child(0)) + "," + render(node.child(1)) + ")";
+                if (operator.equals("**")) return power(render(node.child(0)), render(node.child(1)));
                 if (operator.equals("??")) {
                     String value = temp();
                     return "(" + value + "=" + render(node.child(0)) + "," + nullish(value) + "?" + render(node.child(1)) + ":" + value + ")";
@@ -63,7 +76,7 @@ public final class RegularLowering implements LoweringPass {
             if (node.is("assignmentExpression") && Compat.set("**=", "&&=", "||=", "??=").contains(node.attribute("operator"))) {
                 ExpressionReference ref = reference(node.child(0)); String right = render(node.child(1)); String value = temp();
                 String action ; switch (node.attribute("operator")) {
-                    case "**=": action = ref.write("Math.pow(" + value + "," + right + ")"); break;
+                    case "**=": action = ref.write(power(value, right)); break;
                     case "&&=": action = value + "&&(" + ref.write(right) + ")"; break;
                     case "||=": action = value + "||(" + ref.write(right) + ")"; break;
                     default: action = nullish(value) + "?(" + ref.write(right) + "):" + value; break;

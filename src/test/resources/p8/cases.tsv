@@ -29,8 +29,8 @@ top-level-await	OK	JS_TARGET	JS_TARGET	module	run
 with	OK	OK	OK	script	run
 eval-lowering	OK	JS_TARGET	OK	module	run
 reject-namespace	OK	OK	OK	module	syntax
-reject-import-alias	TS_SYNTAX	TS_SYNTAX	TS_SYNTAX	module	syntax
-reject-export-equals	TS_SYNTAX	TS_SYNTAX	TS_SYNTAX	module	syntax
+reject-import-alias	OK	OK	OK	script	syntax
+reject-export-equals	OK	OK	OK	script	syntax
 reject-decorator	OK	OK	OK	module	syntax
 reject-private	OK	OK	OK	module	syntax
 reject-enum	TS_UNSUPPORTED	TS_UNSUPPORTED	TS_UNSUPPORTED	module	syntax

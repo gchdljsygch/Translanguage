@@ -19,10 +19,27 @@ public final class TypeErasurePass implements TransformationPass {
     @Override public void transform(TransformationContext context) {
         boolean[] erasedModule = {false}, runtimeModule = {false};
         ImportElision imports = new ImportElision(context);
+        boolean commonJs=context.program().children().stream().anyMatch(n->n.kind().equals("exportAssignment")
+                ||n.kind().equals("importEqualsDeclaration")&&n.children().get(1).kind().equals("stringLiteral"));
+        if(commonJs){int start=context.source().startsWith("#!")?context.source().indexOf('\n')+1:0;context.insert(start,"\"use strict\";\n");}
         context.program().walk(node -> {
             if (node.kind().equals("decorator") || node.kind().equals("jsxTypeArguments")) return false;
             if (node instanceof ParsedNode) {
                 ParsedNode parsed = (ParsedNode) node;
+                if (node.kind().equals("importEqualsDeclaration")) {
+                    if (parsed.attribute("typeOnly").equals("true") || !imports.usesImport(((ParsedNode)node.children().get(0)).attribute("bindingName"))) context.remove(node);
+                    else {
+                        SyntaxNode name = node.children().get(0), value = node.children().get(1);
+                        boolean external = value.kind().equals("stringLiteral");
+                        context.replace(new SourceRange(node.range().start(), value.range().start()), "var " + context.slice(name) + " = " + (external ? "require(" : ""));
+                        context.replace(new SourceRange(value.range().end(), node.range().end()), external ? ");" : ";");
+                    }
+                    return false;
+                }
+                if (node.kind().equals("exportAssignment")) {
+                    context.replace(new SourceRange(node.range().start(), node.children().get(0).range().start()), "module.exports = ");
+                    return true;
+                }
                 if (node.kind().equals("importDeclaration")) {
                     if (imports.transform(parsed)) runtimeModule[0] = true;
                     else erasedModule[0] = true;

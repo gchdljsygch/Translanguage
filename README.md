@@ -8,7 +8,7 @@
 
 - **零第三方依赖**：编译与运行仅需 **JDK 17+** 标准库（`java.base`）与单个主 JAR，无需 Node.js、`tsc`、ANTLR 或 Closure Compiler。
 - **纯内存字符串转换**：接收 `(sourceName, source)` 字符串，返回生成的 JavaScript 文本与结构化诊断信息，不触碰文件系统或外部进程。
-- **多目标语法输出**：支持保留原运行时语法（`PRESERVE`），或按目标环境降级输出为 `ES2021` / `ES6`，或降级常用同步语法为 `ES5`（ES6 含 `async`/`await`、异步生成器与公开类字段降级）。
+- **多目标语法输出**：支持保留原运行时语法（`PRESERVE`），或按目标环境降级输出为 `ES2021` / `ES6`，或将同步及异步语法降级为 `ES5`（ES6 含 `async`/`await`、异步生成器与公开类字段降级）。
 - **并发安全与可扩展**：`Transpiler` 实例可跨线程安全复用；内置不可变语法树（AST）与源码区间编辑接口，支持注入自定义 `TransformationPass` 与 `JavaScriptEmitter`。
 
 ---
@@ -180,8 +180,8 @@ Transpiler custom = new TypeScriptTranspiler(JavaScriptTarget.ES6, List.of(
 | --- | --- | --- |
 | `JavaScriptTarget.PRESERVE`（默认） | 擦除 TS 类型、省略无运行时引用的导入并转换枚举/参数属性；保留其余运行时 JS 语法与未修改区域的空白、换行和注释。 | 后续接入现代打包器/运行时，或希望尽量保留原始代码排版。 |
 | `JavaScriptTarget.ES2021` | 重新打印代码，确保语法不超过 ECMAScript 2021；原生保留 `async`/`await`、可选链、空值合并、BigInt、动态 `import()` 和 `import.meta`，同时降级公开类字段并移除数字分隔符。 | 现代浏览器或 Node.js 环境，需兼容尚未支持 ES2022 类字段的引擎。 |
-| `JavaScriptTarget.ES5` | 输出 ES5 **script** 语法；降级块级绑定、箭头函数、默认/剩余参数、类及公开字段、绑定解构、模板字符串、计算属性、展开、`for...of` 和可选链等表达式。ES 模块、异步/生成器等超出当前支持范围的输入返回 `JS_TARGET`。 | 需要 ES5 语法的同步脚本；详细支持范围和运行时要求见 [ES5 支持](docs/ES5_SUPPORT.md)。 |
-| `JavaScriptTarget.ES6` | 重新打印代码，确保语法不超过 ECMAScript 2015（ES6）；自动降级 `async`/`await`、异步生成器、`for await...of`、可选链 `?.`、空值合并 `??`、逻辑赋值、幂运算 `**`、对象展开/剩余、可选 `catch` 绑定、数字分隔符、`export * as ns` 以及公开类字段。 | 仅支持 ES6 语法的运行时环境。 |
+| `JavaScriptTarget.ES5` | 输出 ES5 **script** 语法；降级块级绑定、箭头函数、默认/剩余参数、类及公开字段、绑定解构、模板字符串、计算属性、展开、`for...of` 和可选链等表达式。支持 async/await、同步/异步生成器、带标签模板、静态块、BigInt 字面量、资源管理和 auto-accessor；ES 模块仍返回 `JS_TARGET`。 | 需要 ES5 语法的脚本或显式 CommonJS 输入；详细支持范围和运行时要求见 [ES5 支持](docs/ES5_SUPPORT.md)。 |
+| `JavaScriptTarget.ES6` | 重新打印代码，确保语法不超过 ECMAScript 2015（ES6）；自动降级 `async`/`await`、异步生成器、`for await...of`、可选链 `?.`、空值合并 `??`、逻辑赋值、幂运算 `**`、对象展开/剩余、可选 `catch` 绑定、数字分隔符、`export * as ns` 以及公开类字段和资源管理。 | 仅支持 ES6 语法的运行时环境。 |
 
 ### 显式目标（`ES6` / `ES2021`）行为说明
 
@@ -202,7 +202,7 @@ TranspileResult result = transpiler.transpile("greet.ts",
         "const greet = (name: string) => `Hello ${name}`; console.log(greet('ES5'));");
 ```
 
-ES5 产物经过重新解析及目标校验，主 JAR 和 Java 8 副 JAR 提供相同能力。ES5 不保留 ES 模块；包括类型导入擦除后为维持模块身份生成的 `export {};`，都会返回诊断。完整边界见 [ES5 支持](docs/ES5_SUPPORT.md)。
+ES5 产物经过重新解析及目标校验，主 JAR 和 Java 8 副 JAR 提供相同能力。ES5 支持将 `import x = require("m")` 与 `export = value` 转为 CommonJS，并擦除 `export as namespace`、`declare global`。普通 ES 模块不会隐式改写；包括类型导入擦除后为维持模块身份生成的 `export {};`，都会返回诊断。BigInt 使用宿主原生 `BigInt`，异步操作需要宿主 `Promise`，不会注入通用 polyfill。完整边界见 [ES5 支持](docs/ES5_SUPPORT.md)。
 
 ---
 
@@ -294,6 +294,9 @@ Transpiler transpiler = new TypeScriptTranspiler(
 - **类型注解擦除**：变量、函数参数、`this` 参数、返回值、类属性、对象方法及 `catch` 参数的类型注解。
 - **纯类型声明擦除**：`interface`、`type` 别名、`declare` 环境声明、函数/方法/构造器重载签名、索引签名。
 - **泛型与断言擦除**：泛型声明、类型约束、默认类型参数、泛型调用、泛型箭头函数、`implements` 子句、`as` / `satisfies` / `<T>` 类型断言、`!` 非空断言与确定赋值断言。
+- **Auto-accessor**：支持未装饰的公开/私有实例及静态 `accessor`，生成私有存储与原型 getter/setter，保留品牌校验、计算名称、继承及初始化顺序。
+- **显式资源管理**：显式目标降级 `using` / `await using`，按逆序释放资源，覆盖返回、异常、循环退出和生成器关闭，并保留 suppressed error 链。
+- **CommonJS 与环境声明**：`import x = require("m")`、顶层内部实体别名和 `export = value` 转换为变量绑定/`require`/`module.exports`；类型专用及未使用导入被擦除。`export as namespace` 与 `declare global` 没有运行时代码。
 - **类与修饰符**：擦除 `public` / `protected` / `private` / `readonly` / `override` / `abstract`；转换构造函数参数属性；派生类支持分支、循环、短路/条件表达式、返回表达式及词法箭头函数中的 `super()`，按“父类构造 → 实例字段 → 参数属性”的顺序初始化，并保留 `super()` 表达式的返回值和异常行为。
 - **模块导入导出与 Import Elision**：所有目标默认擦除 `import type` / `export type` 及混合导入导出中的 `type` 项，并按文件内的词法绑定删除未使用或仅用于类型的普通导入，支持默认、命名、别名及命名空间导入的逐项删减。运行时表达式、本地值导出、计算属性名和对象简写中的引用会保留对应导入；同名参数、局部变量、catch 绑定和枚举成员不会误保留外层导入。显式副作用导入 `import './setup'` 和空列表导入 `import {} from './setup'` 保留；若所有静态导入导出均被擦除，会补充一次 `export {};` 维持 ES 模块作用域。
 
@@ -316,8 +319,7 @@ Translanguage 是一个专注于单文件语法转换的库，**不是**完整�
 2. **Import Elision 的分析边界**：只分析当前文件的语法与运行时绑定，不查询依赖模块中某个导出究竟是类型还是值。普通本地 `export { Foo }` 视为值引用；类型重导出请写 `export type { Foo }` 或 `export { type Foo }`。带 `from` 的普通重导出不按本地使用情况删除。直接 `eval(...)` 会保守保留其作用域可见的普通导入，显式类型导入仍擦除。
 3. **不支持的 TS 特性（返回 `TS_UNSUPPORTED` 或 `TS_SYNTAX`）**：
    - JSX 自动 runtime（`react-jsx` / `react-jsxdev`）；当前支持经典工厂模式
-   - 私有方法/访问器的显式目标降级、私有成员装饰器、装饰器 auto-accessor（`accessor`）、`emitDecoratorMetadata` 类型反射元数据；现代模式不允许参数装饰器
-   - `import = require(...)` 与 `export =`
+   - 私有方法的显式目标降级、私有成员装饰器、装饰器 auto-accessor（`accessor`）、`emitDecoratorMetadata` 类型反射元数据；现代模式不允许参数装饰器
    - 直接使用 `await` / `yield` 暂停枚举初始化，或在枚举初始化表达式中使用直接 `eval(...)` / `with`
    - 带参数属性的派生构造函数在参数默认值中调用 `super()`；仅实例字段初始化支持这一位置
    - 参数属性需要跨控制流初始化且源码含直接 `eval(...)` / `with`（为保留参数绑定，转换需要生成局部初始化函数）

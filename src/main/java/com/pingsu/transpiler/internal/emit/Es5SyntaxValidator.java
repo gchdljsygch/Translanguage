@@ -6,9 +6,9 @@ import com.pingsu.transpiler.syntax.Token;
 /** ES5-specific input boundaries and final-artifact checks, shared by both JVM artifacts. */
 final class Es5SyntaxValidator {
     static void validate(JsProgram program, JsNode node, boolean output) {
-        if(node.attribute("async").equals("true")||node.attribute("generator").equals("true")||node.is("yieldExpression"))program.fail(node,"ES5 async functions and generators are not supported");
+        if(output&&(node.attribute("async").equals("true")||node.attribute("generator").equals("true")||node.is("yieldExpression")))program.fail(node,"ES5 async functions and generators are not supported");
         if(node.is("importDeclaration")||node.is("exportDeclaration")||node.is("importExpression")||node.is("importMetaExpression"))program.fail(node,"ES5 scripts cannot contain ES modules; bundle modules before selecting ES5");
-        if(node.is("taggedTemplateExpression")||node.is("newTargetExpression"))program.fail(node,"ES5 cannot lower "+node.kind());
+        if(output&&node.is("taggedTemplateExpression")||node.is("newTargetExpression"))program.fail(node,"ES5 cannot lower "+node.kind());
         if(node.is("superExpression")&&output)program.fail(node,"super remains in ES5 output");
         if(output){
             if(node.is("classDeclaration")||node.is("classExpression")||node.is("arrowFunction")||node.is("templateLiteral")||node.is("computedName")||node.is("spreadElement")||node.is("objectBinding")||node.is("arrayBinding")||node.is("restBinding"))program.fail(node,"Modern syntax remains in ES5 output: "+node.kind());

@@ -54,7 +54,7 @@ final class Es5LexicalLowering implements LoweringPass {
                 return String.join(",",values)+(text(n).trim().endsWith(";")?";":"");
             }
             if(n.is("program")||n.is("functionBody")||n.is("block"))return body(n);
-            if(n.is("switchStatement")&&!owned(n).isEmpty())program.fail(n,"ES5 lexical declarations directly inside switch cases require an explicit block");
+            if(n.is("switchStatement")&&!owned(n).isEmpty())return "{"+declarations(n)+super.render(n)+"}";
             if(n.is("forStatement")&&!owned(n).isEmpty())return loop(n);
             if(n.is("functionExpression")){
                 Set<Binding> captures=new LinkedHashSet<>();capture(n,n,captures);String rendered=super.render(n);

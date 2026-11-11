@@ -51,7 +51,7 @@ enumMemberList	enum	visited	Observed in independent reference parse tree
 enumMember	enum	visited	Observed in independent reference parse tree
 namespaceDeclaration	ambient	visited	Observed in independent reference parse tree
 namespaceName	ambient	visited	Observed in independent reference parse tree
-importAliasDeclaration	reject-import-alias	rejected	legacy unreferenced rule; import-equals is explicitly rejected
+importAliasDeclaration	reject-import-alias	alias	legacy reference rule; production import-equals lowers to CommonJS
 decoratorList	reject-decorator	visited	Observed in independent reference parse tree
 decorator	reject-decorator	visited	Observed in independent reference parse tree
 decoratorMemberExpression	reject-decorator	visited	Observed in independent reference parse tree

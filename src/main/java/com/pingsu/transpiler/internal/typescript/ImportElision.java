@@ -14,10 +14,12 @@ public final class ImportElision {
 
     public ImportElision(TransformationContext context) {
         this.context = context;
-        boolean hasImports = context.program().children().stream().anyMatch(n -> n.kind().equals("importDeclaration")
+        boolean hasImports = context.program().children().stream().anyMatch(n -> (n.kind().equals("importDeclaration") || n.kind().equals("importEqualsDeclaration"))
                 && !n.children().isEmpty() && !RuntimeBindingAnalysis.attribute(n, "typeOnly").equals("true"));
         bindings = hasImports ? new RuntimeBindingAnalysis(context) : null;
     }
+
+    public boolean usesImport(String name) { return bindings != null && bindings.usesImport(name); }
 
     /** Returns whether the declaration still marks the output as an ES module. */
     public boolean transform(ParsedNode declaration) {

@@ -13,7 +13,8 @@ public final class Es5Lowering implements LoweringPass {
         JsProgram regular = JsProgram.parse(program.sourceName(), syntax);
         String expressions = new RegularLowering(true).lower(regular);
         String finalSyntax = new Printer(JsProgram.parse(program.sourceName(), expressions)).print();
-        return new Es5LexicalLowering().lower(JsProgram.parse(program.sourceName(), finalSyntax));
+        String lexical = new Es5LexicalLowering().lower(JsProgram.parse(program.sourceName(), finalSyntax));
+        return new GeneratorLowering().lower(JsProgram.parse(program.sourceName(), lexical));
     }
 
     private static final class Printer extends ScopedJavaScriptPrinter {
@@ -23,11 +24,13 @@ public final class Es5Lowering implements LoweringPass {
         private ClassContext home;
         private boolean constructor;
         private String receiver;
+        private final List<String> templateCaches = new ArrayList<>();
         private static final class FunctionContext {
             final boolean arrow;
             final FunctionContext parent;
             final String thisName, argumentsName;
-            boolean usesThis, usesArguments, lazyThis;
+            boolean usesThis, usesArguments, lazyThis, usesTarget, generator;
+            String targetName;
             FunctionContext(boolean arrow, FunctionContext parent, ScopeAnalysis scopes) {
                 this.arrow=arrow;this.parent=parent;thisName=scopes.fresh("this");argumentsName=scopes.fresh("arguments");
             }
@@ -51,6 +54,7 @@ public final class Es5Lowering implements LoweringPass {
         @Override public String print() {
             if(scopes.dynamic())program.fail(program.root(),"ES5 lowering with direct eval or with is not supported");
             String result=super.print();
+            if(!templateCaches.isEmpty())result+="\nvar "+String.join(",",templateCaches)+";";
             for(Map.Entry<String,String> entry:helpers.entrySet()) if(entry.getValue().startsWith("function ")) result+="\n"+entry.getValue();
             return result;
         }
@@ -92,6 +96,7 @@ public final class Es5Lowering implements LoweringPass {
             if(function(n))return function(n,null,false);
             if(n.is("classDeclaration")||n.is("classExpression"))return clazz(n);
             if(n.is("thisExpression"))return thisValue();
+            if(n.is("newTargetExpression")&&function!=null){function.usesTarget=true;return "(this instanceof "+function.targetName+"?this.constructor:void 0)";}
             if(n.is("returnStatement")&&constructor&&home!=null&&home.derived&&(function==null||!function.arrow)){String finish=helper("returnThis","(value,instance){if(value!==null&&(typeof value==='object'||typeof value==='function'))return value;if(value!==void 0)throw new TypeError('Derived constructor returned a primitive');if(instance===void 0)throw new ReferenceError('Super constructor has not been called');return instance;}");return "return "+finish+"("+(n.children().isEmpty()?"void 0":render(n.child(0)))+","+home.instance+");";}
             if(n.is("identifier")&&text(n).equals("arguments")&&function!=null&&function.arrow) {
                 if(scopes.scope(n).resolve("arguments")==scopes.scope(functionOwner(n)))return super.render(n);
@@ -101,14 +106,16 @@ public final class Es5Lowering implements LoweringPass {
             }
             if((n.is("identifier")||n.is("propertyName"))&&text(n).contains("\\u{")&&!text(n).startsWith("'")&&!text(n).startsWith("\""))return ScopeAnalysis.decode(text(n));
             if(n.is("stringLiteral")||n.is("numericLiteral")||n.is("propertyName")&&(text(n).startsWith("'")||text(n).startsWith("\"")||Character.isDigit(text(n).charAt(0))))return literal(text(n));
+            if(n.is("bigintLiteral"))return "BigInt("+quote(text(n).replace("_", "").replaceFirst("n$", ""))+")";
+            if(n.is("taggedTemplateExpression"))return taggedTemplate(n);
             if(n.is("templateLiteral"))return template(n);
             if(n.is("objectLiteral"))return object(n);
             if(n.is("arrayLiteral")&&n.children().stream().anyMatch(c->c.is("spreadElement")))return spreadArray(n);
             if(n.is("argumentsExpression")&&n.child(0).is("superExpression"))return superCall(n);
             if(n.is("argumentsExpression")&&n.child(0).is("memberExpression")&&n.child(0).child(0).is("superExpression"))return apply(superMember(n.child(0)),thisValue(),arguments(n.child(1)));
             if(n.is("memberExpression")&&n.child(0).is("superExpression")) {
-                JsNode p=parents.get(n);
-                if(p!=null&&(p.is("assignmentExpression")&&p.child(0)==n||p.is("updateExpression")))program.fail(n,"ES5 super property writes are not supported");
+                JsNode ref=n,p=parents.get(ref);while(p!=null&&p.is("parenthesizedExpression")){ref=p;p=parents.get(ref);}
+                if(p!=null&&(p.is("assignmentExpression")&&p.child(0)==ref||p.is("updateExpression")))return superReference(n)+".value";
                 return superMember(n);
             }
             if(n.is("argumentsExpression")&&hasSpread(n.child(1))&&!optionalChain(n.child(0))) {
@@ -121,6 +128,12 @@ public final class Es5Lowering implements LoweringPass {
             if(n.is("assignmentExpression")&&(unwrap(n.child(0)).is("objectLiteral")||unwrap(n.child(0)).is("arrayLiteral")))program.fail(n,"ES5 destructuring assignment is not supported; use a binding declaration");
             if(n.is("forStatement"))return loop(n,"");
             if(n.is("labelledStatement")){JsNode loop=n;String labels="";while(loop.is("labelledStatement")){labels+=loop.attribute("name")+":";loop=loop.child(0);}if(loop.is("forStatement"))return loop(loop,labels);}
+            if(n.is("tryStatement")&&function!=null&&function.generator) {
+                for(int i=1;i<n.children().size();i++)if(n.child(i).is("identifier")) {
+                    JsNode binding=n.child(i),block=n.child(i+1);String caught=scopes.fresh("catch");
+                    return children(n,c->c==binding?caught:c==block?"{let "+text(binding)+"="+caught+";"+render(block).substring(1):render(c));
+                }
+            }
             if(n.is("tryStatement"))for(JsNode child:n.children())if(child.is("objectBinding")||child.is("arrayBinding"))program.fail(child,"ES5 destructured catch bindings are not supported");
             return super.render(n);
         }
@@ -134,6 +147,9 @@ public final class Es5Lowering implements LoweringPass {
         private String function(JsNode n,String name,boolean method) {
             JsNode params=part(n,"parameters"),body=n.child(n.children().size()-1);
             FunctionContext old=function,current=new FunctionContext(n.is("arrowFunction"),old,scopes);function=current;
+            JsNode functionId=n.is("arrowFunction")?null:part(n,"identifier");
+            current.generator=n.attribute("generator").equals("true");
+            current.targetName=name!=null&&!name.isEmpty()?name:functionId!=null?text(functionId):scopes.fresh("function");
             ClassContext oldHome=home;boolean oldConstructor=constructor;String oldReceiver=receiver;
             current.lazyThis=method&&n.is("constructorDeclaration")&&oldReceiver!=null;
             if(!current.arrow&&!method){home=null;constructor=false;receiver=null;}
@@ -156,12 +172,16 @@ public final class Es5Lowering implements LoweringPass {
             if(current.usesThis)prefix.insert(0,"var "+current.thisName+"="+(current.lazyThis?"function(){return "+oldReceiver+";}":"this")+";");
             if(current.usesArguments)prefix.insert(0,"var "+current.argumentsName+"=arguments;");
             if(method&&home!=null)prefix.insert(0,"'use strict';");
+            boolean generatorParameters=n.attribute("generator").equals("true")&&nonSimple;
+            String generatorBody=rendered;
             rendered=insert(body,rendered,prefix.toString());
             String functionName=name;
             if(functionName==null){JsNode id=n.is("arrowFunction")?null:part(n,"identifier");functionName=id==null?"":render(id);}
-            boolean nonConstructible=current.arrow||method&&!n.is("constructorDeclaration")&&!(n.is("objectMember")&&!accessor(n).isEmpty());
+            if(current.usesTarget)functionName=current.targetName;
+            boolean nonConstructible=!n.attribute("generator").equals("true")&&(current.arrow||method&&!n.is("constructorDeclaration")&&!(n.is("objectMember")&&!accessor(n).isEmpty()));
             if(nonConstructible){functionName=scopes.fresh("callable");rendered=insert(body,rendered,"if(this instanceof "+functionName+")throw new TypeError('Function is not a constructor');");}
-            String result="function "+functionName+"("+String.join(",",signature)+")"+rendered;
+            String result="function "+(n.attribute("generator").equals("true")?"*":"")+functionName+"("+String.join(",",signature)+")"+rendered;
+            if(generatorParameters){if(functionName.isEmpty())functionName=scopes.fresh("generatorFunction");result="function "+functionName+"("+String.join(",",signature)+"){if(this instanceof "+functionName+")throw new TypeError('Generator is not a constructor');"+prefix+"return (function*()"+generatorBody+").apply(this,arguments);}";}
             function=old;home=oldHome;constructor=oldConstructor;receiver=oldReceiver;
             if(current.arrow){
                 // An ES5 bound function preserves the arrow's receiver. Lexical arguments use the enclosing alias.
@@ -198,13 +218,46 @@ public final class Es5Lowering implements LoweringPass {
             }
             return rendered.substring(0,offset)+(offset==1?"":";")+prefix+rendered.substring(offset);
         }
+        private String taggedTemplate(JsNode n) {
+            JsNode literal=n.child(1);List<String> raw=new ArrayList<>(),cooked=new ArrayList<>();int cursor=literal.range().start()+1;
+            for(JsNode expression:literal.children()) {
+                int begin=interpolationStart(expression,cursor);
+                templatePart(program.source().substring(cursor,begin),raw,cooked);
+                cursor=interpolationEnd(expression);
+            }
+            templatePart(program.source().substring(cursor,literal.range().end()-1),raw,cooked);
+            String cache=scopes.fresh("template");templateCaches.add(cache);
+            String make=helper("templateObject","(cooked,raw){Object.freeze(raw);Object.defineProperty(cooked,'raw',{value:raw});return Object.freeze(cooked);}");
+            List<String> args=new ArrayList<>();args.add("("+cache+"||("+cache+"="+make+"(["+String.join(",",cooked)+"],["+String.join(",",raw)+"]))"+")");
+            for(JsNode expression:literal.children())args.add(render(expression));
+            JsNode tag=unwrap(n.child(0));
+            if(tag.is("memberExpression")&&tag.child(0).is("superExpression"))return apply(superMember(tag),thisValue(),"["+String.join(",",args)+"]");
+            return render(n.child(0))+"("+String.join(",",args)+")";
+        }
+        private int interpolationStart(JsNode expression,int cursor){
+            for(Token token:program.tokens())if(token.range().start()>=cursor&&token.range().end()<=expression.range().start()&&token.kind()==com.pingsu.transpiler.syntax.TokenKind.TEMPLATE&&token.text().equals("${"))return token.range().start();
+            throw new IllegalStateException("Missing template interpolation delimiter");
+        }
+        private int interpolationEnd(JsNode expression){
+            for(Token token:program.tokens())if(token.range().start()>=expression.range().end()&&token.kind()==com.pingsu.transpiler.syntax.TokenKind.TEMPLATE&&token.text().equals("}"))return token.range().end();
+            throw new IllegalStateException("Missing template interpolation terminator");
+        }
+        private void templatePart(String value,List<String> raw,List<String> cooked) {
+            value=value.replace("\r\n","\n").replace('\r','\n');raw.add(escape(value));
+            for(int i=0;i<value.length();i++)if(value.charAt(i)=='\\'&&i+1<value.length()) {
+                char c=value.charAt(++i);
+                if(c>='1'&&c<='9'||c=='0'&&i+1<value.length()&&Character.isDigit(value.charAt(i+1))){cooked.add("void 0");return;}
+            }
+            try { cooked.add(escape(StringLiterals.decode("\""+value+"\""))); }
+            catch(RuntimeException failure){cooked.add("void 0");}
+        }
         private String template(JsNode n) {
             StringBuilder result=new StringBuilder("(\"\"");int cursor=n.range().start()+1;
             for(JsNode expression:n.children()){
-                int begin=program.source().lastIndexOf("${",expression.range().start());
+                int begin=interpolationStart(expression,cursor);
                 result.append('+').append(escape(StringLiterals.decode("\""+program.source().substring(cursor,begin).replace("\r\n","\n").replace('\r','\n')+"\"")));
                 result.append(".concat(").append(render(expression)).append(')');
-                int end=expression.range().end();while(program.source().charAt(end)!='}')end++;cursor=end+1;
+                cursor=interpolationEnd(expression);
             }
             result.append('+').append(escape(StringLiterals.decode("\""+program.source().substring(cursor,n.range().end()-1).replace("\r\n","\n").replace('\r','\n')+"\"")));
             return result.append(')').toString();
@@ -285,6 +338,17 @@ public final class Es5Lowering implements LoweringPass {
             return "{var "+iterator+"="+iter+"("+render(right)+"),"+step+","+done+"=true,"+failed+"=false,"+error+";"+tdz+"try{"+labels+"for(;!("+done+"=("+step+"="+iterator+".next()).done);"+done+"=true){"+initialize+render(body)+"}}catch("+caught+"){"+failed+"=true;"+error+"="+caught+";}finally{try{if(!"+done+"){var "+close+"="+iterator+".return;if("+close+"!=null)Function.prototype.call.call("+close+","+iterator+");}}finally{if("+failed+")throw "+error+";}}}";
         }
         private void bindingNames(JsNode n,List<String> names){if(!n.attribute("bindingName").isEmpty())names.add(n.attribute("bindingName"));else if(!n.is("bindingInitializer"))for(JsNode c:n.children())bindingNames(c,names);}
+        private String superReference(JsNode n){
+            if(home==null)program.fail(n,"ES5 super requires a class method");
+            String object=home.statik?home.base:home.base+".prototype",k=n.child(1).is("propertyName")?key(n.child(1)):render(n.child(1));
+            String ref=helper("superReference","(base,key,receiver){return Object.defineProperty({},'value',{get:function(){var object=base;while(object){var d=Object.getOwnPropertyDescriptor(object,key);if(d)return d.get?Function.prototype.call.call(d.get,receiver):d.value;object=Object.getPrototypeOf(object);}},"
+                +"set:function(value){var object=base,d,own;while(object){d=Object.getOwnPropertyDescriptor(object,key);if(d)break;object=Object.getPrototypeOf(object);}"
+                +"if(d&&!Object.prototype.hasOwnProperty.call(d,'value')){if(!d.set)throw new TypeError('Super property has no setter');Function.prototype.call.call(d.set,receiver,value);return;}"
+                +"if(d&&!d.writable)throw new TypeError('Super property is not writable');own=Object.getOwnPropertyDescriptor(receiver,key);"
+                +"if(own){if(!Object.prototype.hasOwnProperty.call(own,'value')||!own.writable)throw new TypeError('Receiver property is not writable');Object.defineProperty(receiver,key,{value:value});}"
+                +"else Object.defineProperty(receiver,key,{value:value,writable:true,enumerable:true,configurable:true});}});}");
+            return ref+"("+object+","+k+","+thisValue()+")";
+        }
         private String superMember(JsNode n){if(home==null)program.fail(n,"ES5 super requires a class method");String object=home.statik?home.base:home.base+".prototype";String k=n.child(1).is("propertyName")?key(n.child(1)):render(n.child(1));String get=helper("superGet","(base,key,receiver){while(base){var d=Object.getOwnPropertyDescriptor(base,key);if(d)return d.get?Function.prototype.call.call(d.get,receiver):d.value;base=Object.getPrototypeOf(base);}}");return get+"("+object+","+k+","+thisValue()+")";}
         private String construct(String base,String args,String target,String fallback){
             String h=helper("construct","(base,args,target,fallback){if(typeof Reflect!=='undefined'&&typeof Reflect.construct==='function')return Reflect.construct(base,args,target);if(typeof base!=='function')throw new TypeError('Invalid superclass');if(Function.prototype.toString.call(base).indexOf('[native code]')>=0)throw new TypeError('Native inheritance requires Reflect.construct');var value=Function.prototype.apply.call(base,fallback,args);return value!==null&&(typeof value==='object'||typeof value==='function')?value:fallback;}");

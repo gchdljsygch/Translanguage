@@ -7,12 +7,16 @@ import java.util.*;
 
 /** ES2015 generator continuations preserve native control flow and abrupt completions. */
 public final class AsyncLowering implements LoweringPass {
-    @Override public String lower(JsProgram program) { return new Printer(program).print(); }
+    private final boolean es5;
+    public AsyncLowering(){this(false);}
+    public AsyncLowering(boolean es5){this.es5=es5;}
+    @Override public String lower(JsProgram program) { return new Printer(program,es5).print(); }
     private static final class Printer extends JavaScriptPrinter {
         private final ScopeAnalysis scopes;
         private final AsyncHelpers helpers;
         private Context context;
         private boolean continuation;
+        private final String apply;
         private final class Context {
             final boolean generator, arrow;
             final JsNode owner;
@@ -40,8 +44,8 @@ public final class AsyncLowering implements LoweringPass {
                     +(usesTarget?"const "+lexicalTarget+"=()=>"+targetValue+";":"");
             }
         }
-        Printer(JsProgram program) { super(program);scopes=new ScopeAnalysis(program);helpers=new AsyncHelpers(scopes); }
-        @Override public String print() { String result=super.print();return result+helpers.definitions(); }
+        Printer(JsProgram program,boolean es5) { super(program);apply=es5?"Function.prototype.apply.call(":"Reflect.apply(";scopes=new ScopeAnalysis(program);helpers=new AsyncHelpers(scopes); }
+        @Override public String print() { String result=super.print();return result+helpers.definitions().replace("Reflect.apply(",apply); }
         private boolean function(JsNode n) {
             return Compat.set("functionDeclaration","functionExpression","arrowFunction","methodDeclaration","constructorDeclaration").contains(n.kind())
                 ||n.is("objectMember")&&n.children().stream().anyMatch(c->c.is("parameters"));
@@ -141,7 +145,7 @@ public final class AsyncLowering implements LoweringPass {
                 renderedBody=renderedBody.substring(0,insertion)+";var "+String.join(",",current.temps)+";"+renderedBody.substring(insertion);
             }
             String receiver=current.arrow?"void 0":"this";
-            String iterator="Reflect.apply(function*"+renderedParams+renderedBody+","+receiver+","+arguments+")";
+            String iterator=apply+"function*"+renderedParams+renderedBody+","+receiver+","+arguments+")";
             String helper=helpers.use(current.generator?AsyncHelpers.Kind.GENERATOR:AsyncHelpers.Kind.RUN);
             String guard=Compat.set("functionDeclaration","functionExpression").contains(n.kind())?"if(new.target)throw new TypeError('Async function is not a constructor');":"";
             String wrapper="{"+(current.arrow?"":directives)+guard+current.captures(old)+"return "+helper+"("+(current.generator?iterator:"()=>"+iterator)+");}";
@@ -184,9 +188,9 @@ public final class AsyncLowering implements LoweringPass {
                 String value=superAccess(superMember(n.child(0))),args=render(n.child(1));
                 String array="["+args.substring(1,args.length()-1)+"]",receiver=context.receiver();
                 if(n.is("optionalMemberExpression")){String temp=context.temp();return "("+temp+"="+value+","+temp+"==null?void 0:Reflect.apply("+temp+","+receiver+","+array+"))";}
-                return "Reflect.apply("+value+","+receiver+","+array+")";
+                return apply+value+","+receiver+","+array+")";
             }
-            if(n.is("taggedTemplateExpression")&&superMember(n.child(0))!=null)return "Reflect.apply(Function.prototype.bind,"+superAccess(superMember(n.child(0)))+",["+context.receiver()+"])"+render(n.child(1));
+            if(n.is("taggedTemplateExpression")&&superMember(n.child(0))!=null)return apply+"Function.prototype.bind,"+superAccess(superMember(n.child(0)))+",["+context.receiver()+"])"+render(n.child(1));
             if(superMember(n)!=null)return superAccess(superMember(n));
             return null;
         }
